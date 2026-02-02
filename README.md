@@ -1,13 +1,13 @@
-# jsonata
+# jsonata_dart
 
 A pure Dart implementation of [JSONata](https://jsonata.org) - the JSON query and transformation language.
 
-[![pub package](https://img.shields.io/pub/v/jsonata.svg)](https://pub.dev/packages/jsonata)
+[![pub package](https://img.shields.io/pub/v/jsonata_dart.svg)](https://pub.dev/packages/jsonata_dart)
 
 ## Usage
 
 ```dart
-import 'package:jsonata/jsonata.dart';
+import 'package:jsonata_dart/jsonata_dart.dart';
 
 void main() {
   final data = {

@@ -7,7 +7,7 @@
 /// ## Basic Usage
 ///
 /// ```dart
-/// import 'package:jsonata/jsonata.dart';
+/// import 'package:jsonata_dart/jsonata_dart.dart';
 ///
 /// void main() {
 ///   // Simple path expression

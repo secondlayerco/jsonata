@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:test/test.dart';
-import 'package:jsonata/jsonata.dart';
+import 'package:jsonata_dart/jsonata_dart.dart';
 
 /// Core test groups (non-function-specific)
 const coreGroups = [
