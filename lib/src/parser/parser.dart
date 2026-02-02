@@ -624,7 +624,8 @@ class Parser {
     _advance(); // consume operator
 
     // Handle right-associativity for some operators
-    final rightAssociative = op == ':=' || op == '~>';
+    // Note: ~> (chain operator) is left-associative so a ~> b ~> c = (a ~> b) ~> c
+    final rightAssociative = op == ':=';
     final prec = _precedence[op]!;
     final nextPrec = rightAssociative ? prec - 1 : prec;
 

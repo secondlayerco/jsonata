@@ -38,8 +38,50 @@ void main() {
   final expr2 = Jsonata(r'price * $tax');
   expr2.bind(r'$tax', 1.1);
   print(expr2.evaluate({'price': 100})); // 110.0
+
+  // Regular expressions
+  print(Jsonata(r'$match("hello world", /\w+/)').evaluate({}));
+  // {"match": "hello", "index": 0, "groups": []}
+
+  // Date/time functions
+  print(Jsonata(r'$now()').evaluate({})); // Current ISO 8601 timestamp
+  print(Jsonata(r'$fromMillis(1527152400000, "[D] [MNn] [Y]")').evaluate({})); // "24 May 2018"
+  print(Jsonata(r'$toMillis("2018-05-24", "[Y]-[M01]-[D01]")').evaluate({})); // 1527120000000
+
+  // Transform operator (function chaining)
+  print(Jsonata(r'"hello" ~> $uppercase ~> $length').evaluate({})); // 5
 }
 ```
+
+## Features
+
+### Implemented
+
+- **Path expressions** - Navigate JSON structures with dot notation
+- **Predicates and filters** - Filter arrays with `[condition]`
+- **Wildcards** - `*` and `**` for matching
+- **String functions** - `$string`, `$length`, `$substring`, `$substringBefore`, `$substringAfter`, `$uppercase`, `$lowercase`, `$trim`, `$pad`, `$contains`, `$split`, `$join`, `$replace`, `$match`, `$base64encode`, `$base64decode`
+- **Numeric functions** - `$number`, `$abs`, `$floor`, `$ceil`, `$round`, `$power`, `$sqrt`, `$random`, `$formatNumber`, `$formatBase`, `$formatInteger`, `$parseInteger`
+- **Aggregation functions** - `$sum`, `$max`, `$min`, `$average`, `$count`
+- **Boolean functions** - `$boolean`, `$not`, `$exists`
+- **Array functions** - `$append`, `$count`, `$sort`, `$reverse`, `$shuffle`, `$distinct`, `$zip`
+- **Object functions** - `$keys`, `$values`, `$spread`, `$merge`, `$each`, `$sift`, `$type`, `$lookup`
+- **Higher-order functions** - `$map`, `$filter`, `$reduce`, `$sift`, `$each`, `$single`
+- **Regular expression functions** - `$match`, `$replace` with regex, `$contains` with regex, `$split` with regex
+- **Date/time functions** - `$now`, `$millis`, `$fromMillis`, `$toMillis` with full XPath/XQuery picture string support
+- **Transform operator** - `~>` for function chaining
+- **Conditional expressions** - Ternary `? :` operator
+- **Lambda expressions** - `function($x) { $x * 2 }`
+- **Variable binding** - `$variable := value`
+- **Partial application** - Using `?` placeholder
+- **Custom functions** - Register your own functions
+
+### Not Yet Implemented
+
+- Parent operator (`%`)
+- Sort operator (`^(...)`)
+- Focus operator (`@`)
+- Async expressions
 
 ## Differences from JavaScript JSONata
 
@@ -51,15 +93,6 @@ This is a clean-room Dart implementation, not a transpilation. Key differences:
 | **Exceptions** | Throws with `code`, `message` | Throws `JsonataException` with same codes |
 | **Custom functions** | `expr.registerFunction(name, fn, signature)` | `expr.registerFunction(name, fn)` (no signature validation) |
 | **Async** | Supports `async` expressions | Synchronous only |
-
-### Not Yet Implemented
-
-- Regular expression functions (`$match`, `$replace` with regex)
-- Date/time functions (`$now`, `$toMillis`, etc.)
-- Parent operator (`%`)
-- Sort operator (`^`)
-- Transform operator (`~>`)
-- Focus operator (`@`)
 
 ## API
 

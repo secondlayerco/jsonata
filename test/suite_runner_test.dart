@@ -34,6 +34,9 @@ const coreGroups = [
   'hof-reduce',
   // Regex tests
   'regex',
+  // Date/time tests
+  'function-fromMillis',
+  'function-tomillis',
 ];
 
 void main() {

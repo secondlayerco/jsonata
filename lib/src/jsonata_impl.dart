@@ -13,6 +13,7 @@ import 'functions/object_functions.dart';
 import 'functions/boolean_functions.dart';
 import 'functions/type_functions.dart';
 import 'functions/hof_functions.dart';
+import 'functions/datetime_functions.dart';
 
 /// Main entry point for JSONata expression evaluation.
 ///
@@ -51,6 +52,8 @@ class Jsonata {
   ///
   /// Throws [JsonataException] if evaluation fails.
   dynamic evaluate(dynamic input) {
+    // Reset the evaluation timestamp for $now() and $millis()
+    DateTimeFunctions.resetTimestamp();
     _environment.input = input;
     final result = _evaluator.evaluate(_ast, input, _environment);
     return normalizeResult(result);
@@ -112,6 +115,9 @@ class Jsonata {
 
     // Higher-order functions
     HofFunctions.register(_environment);
+
+    // Date/Time functions
+    DateTimeFunctions.register(_environment);
   }
 }
 
