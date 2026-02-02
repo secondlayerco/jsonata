@@ -1,5 +1,6 @@
 import '../errors/jsonata_exception.dart';
 import '../parser/ast.dart';
+import '../utils/jsonata_regex.dart';
 import '../utils/undefined.dart';
 import 'environment.dart';
 
@@ -29,11 +30,7 @@ class Evaluator {
       WildcardNode() => _evaluateWildcard(input),
       DescendantNode() => _evaluateDescendant(input),
       final RangeNode r => _evaluateRange(r, input, environment),
-      RegexNode() => throw JsonataException(
-          'D3010',
-          'Regex evaluation not yet implemented',
-          position: node.position,
-        ),
+      final RegexNode r => JsonataRegex(r.pattern, r.flags),
       ParentNode() => throw JsonataException(
           'D3011',
           'Parent operator not yet implemented',
@@ -623,6 +620,12 @@ class Evaluator {
     dynamic input,
     Environment env,
   ) {
+    // Check for partial application (arguments contain PlaceholderNode)
+    final hasPlaceholder = node.arguments.any((a) => a is PlaceholderNode);
+    if (hasPlaceholder) {
+      return _createPartialApplication(node, input, env);
+    }
+
     final func = evaluate(node.function, input, env);
 
     if (func is LambdaClosure) {
@@ -660,6 +663,31 @@ class Evaluator {
       'Attempted to invoke a non-function',
       position: node.position,
     );
+  }
+
+  /// Create a partially applied function from a function call with placeholders.
+  dynamic _createPartialApplication(
+    FunctionCallNode node,
+    dynamic input,
+    Environment env,
+  ) {
+    final func = evaluate(node.function, input, env);
+
+    // Evaluate non-placeholder arguments now, placeholders will be filled later
+    final evaluatedArgs = <dynamic>[];
+    final placeholderIndices = <int>[];
+
+    for (var i = 0; i < node.arguments.length; i++) {
+      if (node.arguments[i] is PlaceholderNode) {
+        evaluatedArgs.add(null); // Placeholder
+        placeholderIndices.add(i);
+      } else {
+        evaluatedArgs.add(evaluate(node.arguments[i], input, env));
+      }
+    }
+
+    // Return a PartialApplication object
+    return PartialApplication(func, evaluatedArgs, placeholderIndices, env);
   }
 
   /// Evaluate a function call with context value prepended to arguments.
@@ -1038,5 +1066,45 @@ class NativeFunctionReference {
   /// Invokes the native function with the given arguments.
   dynamic invoke(Evaluator evaluator, List<dynamic> args, dynamic input) {
     return function(args, input, environment);
+  }
+}
+
+/// Represents a partially applied function.
+///
+/// Created when a function is called with placeholder arguments (?).
+/// When invoked, the placeholders are filled in with the provided arguments.
+class PartialApplication {
+  final dynamic function;
+  final List<dynamic> evaluatedArgs;
+  final List<int> placeholderIndices;
+  final Environment environment;
+
+  PartialApplication(
+    this.function,
+    this.evaluatedArgs,
+    this.placeholderIndices,
+    this.environment,
+  );
+
+  /// Invokes the partial application with arguments to fill placeholders.
+  dynamic invoke(Evaluator evaluator, List<dynamic> args, dynamic input) {
+    // Fill in the placeholders with the provided arguments
+    final filledArgs = List<dynamic>.from(evaluatedArgs);
+    for (var i = 0; i < placeholderIndices.length && i < args.length; i++) {
+      filledArgs[placeholderIndices[i]] = args[i];
+    }
+
+    // Call the underlying function
+    if (function is LambdaClosure) {
+      return (function as LambdaClosure).invoke(evaluator, filledArgs, input);
+    }
+    if (function is NativeFunctionReference) {
+      return (function as NativeFunctionReference)
+          .invoke(evaluator, filledArgs, input);
+    }
+    if (function is JsonataFunction) {
+      return (function as JsonataFunction)(filledArgs, input, environment);
+    }
+    return undefined;
   }
 }

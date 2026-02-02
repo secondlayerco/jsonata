@@ -1,4 +1,7 @@
+import '../errors/jsonata_exception.dart';
 import '../evaluator/environment.dart';
+import '../evaluator/evaluator.dart';
+import '../utils/jsonata_regex.dart';
 import '../utils/undefined.dart';
 
 /// String manipulation functions for JSONata.
@@ -150,6 +153,9 @@ class StringFunctions {
     if (pattern is String) {
       return str.contains(pattern);
     }
+    if (pattern is JsonataRegex) {
+      return pattern.hasMatch(str);
+    }
     return false;
   }
 
@@ -161,9 +167,15 @@ class StringFunctions {
     final separator = args.length > 1 ? args[1] : '';
     final limit = args.length > 2 ? (args[2] as num).toInt() : null;
 
-    if (separator is! String) return undefined;
+    List<String> parts;
+    if (separator is String) {
+      parts = str.split(separator);
+    } else if (separator is JsonataRegex) {
+      parts = str.split(separator.regex);
+    } else {
+      return undefined;
+    }
 
-    var parts = str.split(separator);
     if (limit != null && limit > 0) {
       parts = parts.take(limit).toList();
     }
@@ -188,46 +200,270 @@ class StringFunctions {
 
   static dynamic _replace(List<dynamic> args, dynamic input, Environment env) {
     if (args.length < 3) return undefined;
-    final str = args[0];
-    final pattern = args[1];
-    final replacement = args[2];
 
-    if (str is! String || replacement is! String) return undefined;
+    // Handle both direct call: $replace(str, pattern, replacement)
+    // and context call: context.$replace(str, pattern, replacement)
+    // In context call, args[0] is the context object
+    dynamic str;
+    dynamic pattern;
+    dynamic replacement;
+    int limitArgIndex;
 
+    if (args[0] is String) {
+      // Direct call
+      str = args[0];
+      pattern = args[1];
+      replacement = args[2];
+      limitArgIndex = 3;
+    } else if (args.length >= 4 && args[1] is String) {
+      // Context call - args[0] is context, args[1] is string
+      str = args[1];
+      pattern = args[2];
+      replacement = args[3];
+      limitArgIndex = 4;
+    } else {
+      return undefined;
+    }
+
+    if (str is! String) return undefined;
+
+    // Handle string pattern
     if (pattern is String) {
-      final limit = args.length > 3 ? (args[3] as num).toInt() : -1;
+      if (replacement is! String) return undefined;
+      final limit =
+          args.length > limitArgIndex ? (args[limitArgIndex] as num).toInt() : -1;
       if (limit < 0) {
         return str.replaceAll(pattern, replacement);
       }
+      if (limit == 0) return str;
       var result = str;
       for (var i = 0; i < limit; i++) {
+        final idx = result.indexOf(pattern);
+        if (idx < 0) break;
         result = result.replaceFirst(pattern, replacement);
       }
       return result;
     }
+
+    // Handle regex pattern
+    if (pattern is JsonataRegex) {
+      final limit =
+          args.length > limitArgIndex ? (args[limitArgIndex] as num).toInt() : -1;
+      if (limit == 0) return str;
+
+      final matches = pattern.allMatches(str).toList();
+      if (matches.isEmpty) return str;
+
+      // Check for potentially infinite replacements
+      // If regex matches empty string and replacement references non-existent group
+      if (replacement is String) {
+        final hasEmptyMatch = matches.any((m) => m.start == m.end);
+        if (hasEmptyMatch) {
+          // Check if replacement references a non-existent capture group
+          final groupRefs = RegExp(r'\$(\d+)').allMatches(replacement);
+          for (final ref in groupRefs) {
+            final groupNum = int.parse(ref.group(1)!);
+            if (groupNum > 0 && groupNum > matches.first.groupCount) {
+              throw JsonataException(
+                'D1004',
+                'Regular expression infinite loop detected',
+                position: 0,
+              );
+            }
+          }
+        }
+      }
+
+      // Apply limit if specified
+      final effectiveMatches = limit > 0 ? matches.take(limit).toList() : matches;
+
+      // Handle function replacement (LambdaClosure from JSONata expressions)
+      if (replacement is LambdaClosure) {
+        return _replaceWithFunction(str, effectiveMatches, replacement, env);
+      }
+
+      if (replacement is! String) return undefined;
+      return _replaceWithPattern(str, effectiveMatches, replacement);
+    }
+
     return undefined;
   }
 
+  /// Replace matches with a pattern string that may contain $0, $1, $2, etc.
+  static String _replaceWithPattern(
+      String str, List<RegExpMatch> matches, String replacement) {
+    final result = StringBuffer();
+    var lastEnd = 0;
+
+    for (final match in matches) {
+      // Add text before match
+      result.write(str.substring(lastEnd, match.start));
+
+      // Process replacement pattern
+      final replaced = _processReplacement(replacement, match);
+      result.write(replaced);
+
+      lastEnd = match.end;
+    }
+
+    // Add remaining text
+    result.write(str.substring(lastEnd));
+    return result.toString();
+  }
+
+  /// Process a replacement string, substituting $0, $1, $2, etc.
+  ///
+  /// Rules:
+  /// - $$ → literal $
+  /// - $0 → entire match
+  /// - $N → capture group N if it exists
+  /// - If $N where N > groupCount, try to find longest valid prefix
+  ///   e.g., $123 with 1 group → group 1 + literal "23"
+  /// - If no valid group found:
+  ///   - For single digit: consume $N, output empty
+  ///   - For multi-digit: consume $ + first digit, output remaining digits
+  static String _processReplacement(String replacement, RegExpMatch match) {
+    final result = StringBuffer();
+    var i = 0;
+
+    while (i < replacement.length) {
+      if (replacement[i] == r'$' && i + 1 < replacement.length) {
+        final nextChar = replacement[i + 1];
+
+        if (nextChar == r'$') {
+          // $$ -> literal $
+          result.write(r'$');
+          i += 2;
+        } else if (nextChar == '0') {
+          // $0 -> entire match
+          result.write(match.group(0) ?? '');
+          i += 2;
+        } else if (_isDigit(nextChar)) {
+          // $1, $2, ..., $12, etc. - capture groups
+          // Look ahead for multi-digit group numbers
+          var numStr = nextChar;
+          var j = i + 2;
+          while (j < replacement.length && _isDigit(replacement[j])) {
+            numStr += replacement[j];
+            j++;
+          }
+
+          // Try to find longest valid group number (1-based)
+          var found = false;
+          for (var len = numStr.length; len >= 1; len--) {
+            final subNum = int.parse(numStr.substring(0, len));
+            if (subNum >= 1 && subNum <= match.groupCount) {
+              result.write(match.group(subNum) ?? '');
+              result.write(numStr.substring(len)); // Remaining digits as literal
+              i = j;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            // No valid group found
+            if (numStr.length == 1) {
+              // Single digit: consume $N, output empty
+              i = j;
+            } else {
+              // Multi-digit: consume $ + first digit, output remaining digits
+              result.write(numStr.substring(1));
+              i = j;
+            }
+          }
+        } else {
+          // $x where x is not a digit - keep as is
+          result.write(r'$');
+          result.write(nextChar);
+          i += 2;
+        }
+      } else {
+        result.write(replacement[i]);
+        i++;
+      }
+    }
+
+    return result.toString();
+  }
+
+  static bool _isDigit(String c) {
+    return c.codeUnitAt(0) >= 48 && c.codeUnitAt(0) <= 57;
+  }
+
+  /// Replace matches using a function (LambdaClosure).
+  static dynamic _replaceWithFunction(String str, List<RegExpMatch> matches,
+      LambdaClosure replacement, Environment env) {
+    final evaluator = env.evaluator;
+    if (evaluator == null) return undefined;
+
+    final result = StringBuffer();
+    var lastEnd = 0;
+
+    for (final match in matches) {
+      result.write(str.substring(lastEnd, match.start));
+
+      // Create match object to pass to function
+      final matchObj = <String, dynamic>{
+        'match': match.group(0),
+        'index': match.start,
+        'groups': match.groupCount > 0
+            ? List<String>.generate(
+                match.groupCount, (i) => match.group(i + 1) ?? '')
+            : <String>[],
+      };
+
+      // Call the replacement function using LambdaClosure.invoke()
+      final replaced = replacement.invoke(evaluator, [matchObj], str);
+      if (replaced is! String) {
+        throw JsonataException(
+          'D3012',
+          'The replacement function must return a string',
+          position: 0,
+        );
+      }
+      result.write(replaced);
+      lastEnd = match.end;
+    }
+
+    result.write(str.substring(lastEnd));
+    return result.toString();
+  }
+
   static dynamic _match(List<dynamic> args, dynamic input, Environment env) {
-    // Basic regex matching - to be fully implemented
     if (args.length < 2) return undefined;
     final str = args[0];
     final pattern = args[1];
-    if (str is! String || pattern is! String) return undefined;
+    if (str is! String) return undefined;
 
-    try {
-      final regex = RegExp(pattern);
-      final matches = regex.allMatches(str);
-      return matches.map((m) => {
+    JsonataRegex regex;
+    if (pattern is JsonataRegex) {
+      regex = pattern;
+    } else if (pattern is String) {
+      regex = JsonataRegex(pattern, 'g');
+    } else {
+      return undefined;
+    }
+
+    final matches = regex.allMatches(str);
+    final results = <Map<String, dynamic>>[];
+
+    for (final m in matches) {
+      final matchResult = <String, dynamic>{
         'match': m.group(0),
         'index': m.start,
         'groups': m.groupCount > 0
-            ? List.generate(m.groupCount, (i) => m.group(i + 1))
+            ? List<String>.generate(m.groupCount, (i) => m.group(i + 1) ?? '')
             : <String>[],
-      }).toList();
-    } catch (e) {
-      return undefined;
+      };
+      results.add(matchResult);
+
+      // If not global, only return first match
+      if (!regex.isGlobal) break;
     }
+
+    if (results.isEmpty) return undefined;
+    if (results.length == 1) return results[0];
+    return results;
   }
 
   static dynamic _base64encode(List<dynamic> args, dynamic input, Environment env) {

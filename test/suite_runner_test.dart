@@ -32,6 +32,8 @@ const coreGroups = [
   'hof-map',
   'hof-filter',
   'hof-reduce',
+  // Regex tests
+  'regex',
 ];
 
 void main() {

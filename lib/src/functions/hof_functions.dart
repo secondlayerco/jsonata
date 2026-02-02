@@ -13,7 +13,7 @@ class HofFunctions {
     env.registerFunction(r'$single', _single);
   }
 
-  /// Helper to invoke a function (either LambdaClosure or NativeFunctionReference).
+  /// Helper to invoke a function (LambdaClosure, NativeFunctionReference, or PartialApplication).
   static dynamic _invokeFunc(
       dynamic func, Evaluator evaluator, List<dynamic> args, dynamic input) {
     if (func is LambdaClosure) {
@@ -22,12 +22,17 @@ class HofFunctions {
     if (func is NativeFunctionReference) {
       return func.invoke(evaluator, args, input);
     }
+    if (func is PartialApplication) {
+      return func.invoke(evaluator, args, input);
+    }
     return undefined;
   }
 
   /// Returns true if func is a callable function.
   static bool _isCallable(dynamic func) {
-    return func is LambdaClosure || func is NativeFunctionReference;
+    return func is LambdaClosure ||
+        func is NativeFunctionReference ||
+        func is PartialApplication;
   }
 
   /// $map(array, function) - applies function to each element
