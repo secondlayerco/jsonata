@@ -1,5 +1,5 @@
 /// Represents a JSONata regex pattern with its flags.
-/// 
+///
 /// This is used to pass regex patterns to functions like $match, $replace, etc.
 class JsonataRegex {
   /// The regex pattern string.
@@ -39,4 +39,3 @@ class JsonataRegex {
   @override
   String toString() => '/$pattern/$flags';
 }
-

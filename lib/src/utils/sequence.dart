@@ -95,4 +95,3 @@ JsonataSequence<dynamic> appendToSequence(dynamic sequence, dynamic value) {
 
   return result;
 }
-

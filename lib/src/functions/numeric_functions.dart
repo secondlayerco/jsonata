@@ -156,7 +156,8 @@ class NumericFunctions {
     return total / count;
   }
 
-  static dynamic _formatNumber(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _formatNumber(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final value = args[0];
     if (value is! num) return undefined;
@@ -164,7 +165,8 @@ class NumericFunctions {
     return value.toString();
   }
 
-  static dynamic _formatBase(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _formatBase(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final value = args[0];
     if (value is! num) return undefined;
@@ -175,7 +177,8 @@ class NumericFunctions {
     return value.toInt().toRadixString(radix);
   }
 
-  static dynamic _formatInteger(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _formatInteger(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final value = args[0];
     if (value is! num) return undefined;
@@ -183,7 +186,8 @@ class NumericFunctions {
     return value.toInt().toString();
   }
 
-  static dynamic _parseInteger(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _parseInteger(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final str = args[0];
     if (str is! String) return undefined;
@@ -192,4 +196,3 @@ class NumericFunctions {
     return int.tryParse(str, radix: radix) ?? undefined;
   }
 }
-

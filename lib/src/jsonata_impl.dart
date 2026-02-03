@@ -120,4 +120,3 @@ class Jsonata {
     DateTimeFunctions.register(_environment);
   }
 }
-

@@ -97,19 +97,24 @@ class NameNode extends AstNode {
   final bool tuple;
 
   const NameNode(super.position, this.value,
-      {this.escaped = false, this.keepArray = false, this.ancestors = const [], this.tuple = false});
+      {this.escaped = false,
+      this.keepArray = false,
+      this.ancestors = const [],
+      this.tuple = false});
 
   /// Create a copy with an additional ancestor slot.
   NameNode withAncestor(ParentSlot slot) => NameNode(
-    position, value,
-    escaped: escaped,
-    keepArray: keepArray,
-    ancestors: [...ancestors, slot],
-    tuple: true,
-  );
+        position,
+        value,
+        escaped: escaped,
+        keepArray: keepArray,
+        ancestors: [...ancestors, slot],
+        tuple: true,
+      );
 
   @override
-  String toString() => 'NameNode($value${ancestor != null ? ', ancestor=$ancestor' : ''})';
+  String toString() =>
+      'NameNode($value${ancestor != null ? ', ancestor=$ancestor' : ''})';
 }
 
 /// A variable reference ($name).
@@ -166,7 +171,8 @@ class PathNode extends AstNode {
   @override
   final bool keepArray;
 
-  const PathNode(super.position, this.left, this.right, {this.keepArray = false});
+  const PathNode(super.position, this.left, this.right,
+      {this.keepArray = false});
 
   @override
   String toString() => 'PathNode()';
@@ -258,7 +264,8 @@ class LambdaNode extends AstNode {
   /// The function signature (if specified).
   final String? signature;
 
-  const LambdaNode(super.position, this.parameters, this.body, {this.signature});
+  const LambdaNode(super.position, this.parameters, this.body,
+      {this.signature});
 
   @override
   String toString() => 'LambdaNode(${parameters.length} params)';
@@ -319,17 +326,19 @@ class WildcardNode extends AstNode {
   /// Whether this step uses tuple-based evaluation.
   final bool tuple;
 
-  const WildcardNode(super.position, {this.ancestors = const [], this.tuple = false});
+  const WildcardNode(super.position,
+      {this.ancestors = const [], this.tuple = false});
 
   /// Create a copy with an additional ancestor slot.
   WildcardNode withAncestor(ParentSlot slot) => WildcardNode(
-    position,
-    ancestors: [...ancestors, slot],
-    tuple: true,
-  );
+        position,
+        ancestors: [...ancestors, slot],
+        tuple: true,
+      );
 
   @override
-  String toString() => 'WildcardNode(${ancestors.isNotEmpty ? 'ancestors=$ancestors' : ''})';
+  String toString() =>
+      'WildcardNode(${ancestors.isNotEmpty ? 'ancestors=$ancestors' : ''})';
 }
 
 /// A descendant wildcard expression (**).

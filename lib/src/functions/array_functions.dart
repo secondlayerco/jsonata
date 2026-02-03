@@ -28,8 +28,10 @@ class ArrayFunctions {
     final arr1 = args[0];
     final arr2 = args[1];
 
-    final list1 = arr1 is List ? arr1 : (isUndefined(arr1) ? <dynamic>[] : [arr1]);
-    final list2 = arr2 is List ? arr2 : (isUndefined(arr2) ? <dynamic>[] : [arr2]);
+    final list1 =
+        arr1 is List ? arr1 : (isUndefined(arr1) ? <dynamic>[] : [arr1]);
+    final list2 =
+        arr2 is List ? arr2 : (isUndefined(arr2) ? <dynamic>[] : [arr2]);
 
     return [...list1, ...list2];
   }
@@ -101,7 +103,8 @@ class ArrayFunctions {
 
     if (arrays.isEmpty) return undefined;
 
-    final minLength = arrays.map((a) => a.length).reduce((a, b) => a < b ? a : b);
+    final minLength =
+        arrays.map((a) => a.length).reduce((a, b) => a < b ? a : b);
     final result = <List<dynamic>>[];
 
     for (var i = 0; i < minLength; i++) {
@@ -131,4 +134,3 @@ class ArrayFunctions {
     return result;
   }
 }
-

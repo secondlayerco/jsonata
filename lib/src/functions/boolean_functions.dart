@@ -37,4 +37,3 @@ class BooleanFunctions {
     return true;
   }
 }
-

@@ -19,7 +19,9 @@ void main() {
     test('nested field access', () {
       final expr = Jsonata('person.name');
       expect(
-        expr.evaluate({'person': {'name': 'John'}}),
+        expr.evaluate({
+          'person': {'name': 'John'}
+        }),
         equals('John'),
       );
     });
@@ -27,7 +29,13 @@ void main() {
     test('deep nested access', () {
       final expr = Jsonata('a.b.c.d');
       expect(
-        expr.evaluate({'a': {'b': {'c': {'d': 42}}}}),
+        expr.evaluate({
+          'a': {
+            'b': {
+              'c': {'d': 42}
+            }
+          }
+        }),
         equals(42),
       );
     });
@@ -163,12 +171,20 @@ void main() {
 
     test('array access', () {
       final expr = Jsonata('items[0]');
-      expect(expr.evaluate({'items': ['a', 'b', 'c']}), equals('a'));
+      expect(
+          expr.evaluate({
+            'items': ['a', 'b', 'c']
+          }),
+          equals('a'));
     });
 
     test('negative array index', () {
       final expr = Jsonata('items[-1]');
-      expect(expr.evaluate({'items': ['a', 'b', 'c']}), equals('c'));
+      expect(
+          expr.evaluate({
+            'items': ['a', 'b', 'c']
+          }),
+          equals('c'));
     });
   });
 
@@ -319,10 +335,11 @@ void main() {
     test('* operator on object', () {
       final expr = Jsonata('obj.*');
       expect(
-        expr.evaluate({'obj': {'a': 1, 'b': 2, 'c': 3}}),
+        expr.evaluate({
+          'obj': {'a': 1, 'b': 2, 'c': 3}
+        }),
         containsAll([1, 2, 3]),
       );
     });
   });
 }
-

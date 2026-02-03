@@ -89,4 +89,3 @@ class Environment {
     return parent.rootInput;
   }
 }
-

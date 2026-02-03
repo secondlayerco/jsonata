@@ -37,4 +37,3 @@ library;
 export 'src/jsonata_impl.dart' show Jsonata;
 export 'src/errors/jsonata_exception.dart' show JsonataException;
 export 'src/parser/ast.dart' show AstNode;
-

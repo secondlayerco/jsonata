@@ -35,4 +35,3 @@ dynamic normalizeResult(dynamic value) {
   }
   return value;
 }
-

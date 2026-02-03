@@ -22,15 +22,71 @@ class DateTimeFunctions {
 
   /// Number words for word-based number parsing.
   static const _numberWordsList = [
-    'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
-    'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
-    'seventeen', 'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty',
-    'sixty', 'seventy', 'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion',
-    'zeroth', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth',
-    'tenth', 'eleventh', 'twelfth', 'thirteenth', 'fourteenth', 'fifteenth',
-    'sixteenth', 'seventeenth', 'eighteenth', 'nineteenth', 'twentieth', 'thirtieth',
-    'fortieth', 'fiftieth', 'sixtieth', 'seventieth', 'eightieth', 'ninetieth',
-    'hundredth', 'thousandth', 'millionth', 'billionth', 'and'
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+    'thirteen',
+    'fourteen',
+    'fifteen',
+    'sixteen',
+    'seventeen',
+    'eighteen',
+    'nineteen',
+    'twenty',
+    'thirty',
+    'forty',
+    'fifty',
+    'sixty',
+    'seventy',
+    'eighty',
+    'ninety',
+    'hundred',
+    'thousand',
+    'million',
+    'billion',
+    'zeroth',
+    'first',
+    'second',
+    'third',
+    'fourth',
+    'fifth',
+    'sixth',
+    'seventh',
+    'eighth',
+    'ninth',
+    'tenth',
+    'eleventh',
+    'twelfth',
+    'thirteenth',
+    'fourteenth',
+    'fifteenth',
+    'sixteenth',
+    'seventeenth',
+    'eighteenth',
+    'nineteenth',
+    'twentieth',
+    'thirtieth',
+    'fortieth',
+    'fiftieth',
+    'sixtieth',
+    'seventieth',
+    'eightieth',
+    'ninetieth',
+    'hundredth',
+    'thousandth',
+    'millionth',
+    'billionth',
+    'and'
   ];
 
   /// Regex pattern for matching word-based numbers.
@@ -113,8 +169,7 @@ class DateTimeFunctions {
   }
 
   /// $toMillis(timestamp [, picture]) - Parse timestamp to milliseconds.
-  static dynamic _toMillis(
-      List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _toMillis(List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final timestamp = args[0];
     if (isUndefined(timestamp)) return undefined;
@@ -164,7 +219,8 @@ class DateTimeFunctions {
     final absOffset = offsetMinutes.abs();
     final hours = absOffset ~/ 60;
     final mins = absOffset % 60;
-    final tzStr = '$sign${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
+    final tzStr =
+        '$sign${hours.toString().padLeft(2, '0')}:${mins.toString().padLeft(2, '0')}';
 
     return '${dt.year.toString().padLeft(4, '0')}-'
         '${dt.month.toString().padLeft(2, '0')}-'
@@ -194,8 +250,7 @@ class DateTimeFunctions {
       // Full ISO 8601 with timezone
       RegExp(
           r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})([+-]\d{4}|Z)$'),
-      RegExp(
-          r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-]\d{4}|Z)$'),
+      RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})([+-]\d{4}|Z)$'),
       RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})$'),
       RegExp(r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})$'),
       RegExp(r'^(\d{4})-(\d{2})-(\d{2})$'),
@@ -215,24 +270,18 @@ class DateTimeFunctions {
   }
 
   static int _parseIso8601Match(RegExpMatch match, String timestamp) {
-    final groups = match.groups(
-        List.generate(match.groupCount, (i) => i + 1));
+    final groups = match.groups(List.generate(match.groupCount, (i) => i + 1));
     final year = int.parse(groups[0]!);
-    final month = groups.length > 1 && groups[1] != null
-        ? int.parse(groups[1]!)
-        : 1;
-    final day = groups.length > 2 && groups[2] != null
-        ? int.parse(groups[2]!)
-        : 1;
-    final hour = groups.length > 3 && groups[3] != null
-        ? int.parse(groups[3]!)
-        : 0;
-    final minute = groups.length > 4 && groups[4] != null
-        ? int.parse(groups[4]!)
-        : 0;
-    final second = groups.length > 5 && groups[5] != null
-        ? int.parse(groups[5]!)
-        : 0;
+    final month =
+        groups.length > 1 && groups[1] != null ? int.parse(groups[1]!) : 1;
+    final day =
+        groups.length > 2 && groups[2] != null ? int.parse(groups[2]!) : 1;
+    final hour =
+        groups.length > 3 && groups[3] != null ? int.parse(groups[3]!) : 0;
+    final minute =
+        groups.length > 4 && groups[4] != null ? int.parse(groups[4]!) : 0;
+    final second =
+        groups.length > 5 && groups[5] != null ? int.parse(groups[5]!) : 0;
     int millisecond = 0;
     String? tz;
 
@@ -363,16 +412,19 @@ class DateTimeFunctions {
       case 'H': // Hour (24-hour)
         return _formatNumber(dt.hour, presentation);
       case 'h': // Hour (12-hour)
-        final hour12 = dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
+        final hour12 =
+            dt.hour == 0 ? 12 : (dt.hour > 12 ? dt.hour - 12 : dt.hour);
         return _formatNumber(hour12, presentation);
       case 'P': // AM/PM marker
         return _formatAmPm(dt.hour, presentation);
       case 'm': // Minutes
         // Default to 2-digit zero-padded format
-        return _formatNumber(dt.minute, presentation.isEmpty ? '01' : presentation);
+        return _formatNumber(
+            dt.minute, presentation.isEmpty ? '01' : presentation);
       case 's': // Seconds
         // Default to 2-digit zero-padded format
-        return _formatNumber(dt.second, presentation.isEmpty ? '01' : presentation);
+        return _formatNumber(
+            dt.second, presentation.isEmpty ? '01' : presentation);
       case 'f': // Fractional seconds
         return _formatFractionalSeconds(millis, presentation);
       case 'Z': // Timezone offset
@@ -388,24 +440,38 @@ class DateTimeFunctions {
     }
   }
 
-
   // Month and day names
   static const _monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
   ];
 
   static const _dayNames = [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-    'Friday', 'Saturday', 'Sunday'
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday'
   ];
 
   /// Formats year with presentation modifiers.
   static String _formatYear(int year, String presentation) {
     // Check for 'N' or 'n' - names not supported for years
     if (presentation.contains('N') || presentation.contains('n')) {
-      throw JsonataException('D3133',
-          'Year component cannot be represented as a name',
+      throw JsonataException(
+          'D3133', 'Year component cannot be represented as a name',
           position: 0);
     }
 
@@ -415,10 +481,12 @@ class DateTimeFunctions {
     if (widthMatch != null && widthMatch.group(2) == null) {
       // Only min specified, treat it as max for year
       final width = int.parse(widthMatch.group(1)!);
-      final basePresentation = presentation.substring(0, presentation.length - widthMatch.group(0)!.length);
+      final basePresentation = presentation.substring(
+          0, presentation.length - widthMatch.group(0)!.length);
 
       // Check if base presentation has an explicit pattern requiring more digits
-      final patternDigits = basePresentation.replaceAll(RegExp(r'[^0-9#]'), '').length;
+      final patternDigits =
+          basePresentation.replaceAll(RegExp(r'[^0-9#]'), '').length;
       if (patternDigits > width) {
         // Pattern requires more digits than width, use pattern
         return _formatNumber(year, presentation);
@@ -429,7 +497,8 @@ class DateTimeFunctions {
         // Take rightmost digits only when no pattern specified
         return yearStr.substring(yearStr.length - width);
       }
-      return _formatNumber(year, basePresentation.isEmpty ? '1' : basePresentation);
+      return _formatNumber(
+          year, basePresentation.isEmpty ? '1' : basePresentation);
     }
 
     return _formatNumber(year, presentation);
@@ -447,8 +516,7 @@ class DateTimeFunctions {
   /// Formats day of week with presentation modifiers.
   static String _formatDayOfWeek(int weekday, String presentation) {
     // If numeric format
-    if (RegExp(r'^[0-9#]+$').hasMatch(presentation) ||
-        presentation == '1') {
+    if (RegExp(r'^[0-9#]+$').hasMatch(presentation) || presentation == '1') {
       // Sunday is 7 in Dart, but should be displayed as 7
       return _formatNumber(weekday, presentation);
     }
@@ -502,8 +570,8 @@ class DateTimeFunctions {
     // Check for 6-digit format (error case) - must check first
     final digitCount = presentation.replaceAll(RegExp(r'[^0-9]'), '').length;
     if (digitCount >= 6) {
-      throw JsonataException('D3134',
-          'Timezone format is invalid: $presentation',
+      throw JsonataException(
+          'D3134', 'Timezone format is invalid: $presentation',
           position: 0);
     }
 
@@ -560,9 +628,8 @@ class DateTimeFunctions {
     final widthMatch = RegExp(r',(\d+)(?:-(\d+))?$').firstMatch(presentation);
     if (widthMatch != null) {
       // First number is minWidth (not used for names), second is maxWidth
-      maxWidth = widthMatch.group(2) != null
-          ? int.parse(widthMatch.group(2)!)
-          : null;
+      maxWidth =
+          widthMatch.group(2) != null ? int.parse(widthMatch.group(2)!) : null;
     }
 
     String result = name;
@@ -586,7 +653,6 @@ class DateTimeFunctions {
     return result;
   }
 
-
   /// Formats a number with various presentation modifiers.
   static String _formatNumber(int value, String presentation) {
     // Parse width modifiers
@@ -595,12 +661,11 @@ class DateTimeFunctions {
     final widthMatch = RegExp(r',(\d+)(?:-(\d+))?$').firstMatch(presentation);
     if (widthMatch != null) {
       minWidth = int.parse(widthMatch.group(1)!);
-      maxWidth = widthMatch.group(2) != null
-          ? int.parse(widthMatch.group(2)!)
-          : null;
+      maxWidth =
+          widthMatch.group(2) != null ? int.parse(widthMatch.group(2)!) : null;
       // Remove width modifier from presentation for further processing
-      presentation =
-          presentation.substring(0, presentation.length - widthMatch.group(0)!.length);
+      presentation = presentation.substring(
+          0, presentation.length - widthMatch.group(0)!.length);
     }
 
     // Handle different presentation types
@@ -622,13 +687,15 @@ class DateTimeFunctions {
       return _applyWidthConstraints(_toWords(value), minWidth, maxWidth);
     }
     if (presentation == 'W') {
-      return _applyWidthConstraints(_toWords(value).toUpperCase(), minWidth, maxWidth);
+      return _applyWidthConstraints(
+          _toWords(value).toUpperCase(), minWidth, maxWidth);
     }
     if (presentation == 'Ww') {
       final words = _toWords(value);
       return _applyWidthConstraints(
           words.isEmpty ? '' : words[0].toUpperCase() + words.substring(1),
-          minWidth, maxWidth);
+          minWidth,
+          maxWidth);
     }
 
     // Ordinal words
@@ -638,22 +705,27 @@ class DateTimeFunctions {
 
     // Letter-based numbering (a=1, b=2, ..., z=26, aa=27, etc.)
     if (presentation == 'a') {
-      return _applyWidthConstraints(_toLetterNumber(value, false), minWidth, maxWidth);
+      return _applyWidthConstraints(
+          _toLetterNumber(value, false), minWidth, maxWidth);
     }
     if (presentation == 'A') {
-      return _applyWidthConstraints(_toLetterNumber(value, true), minWidth, maxWidth);
+      return _applyWidthConstraints(
+          _toLetterNumber(value, true), minWidth, maxWidth);
     }
 
     // Ordinal suffix (1st, 2nd, 3rd, etc.)
     if (presentation.endsWith('o')) {
       final basePattern = presentation.substring(0, presentation.length - 1);
       final formatted = _formatNumericPattern(value, basePattern);
-      return _applyWidthConstraints(formatted + _ordinalSuffix(value), minWidth, maxWidth);
+      return _applyWidthConstraints(
+          formatted + _ordinalSuffix(value), minWidth, maxWidth);
     }
 
     // Numeric patterns with padding
-    if (presentation.contains('#') || RegExp(r'^[0-9]+$').hasMatch(presentation)) {
-      return _applyWidthConstraints(_formatNumericPattern(value, presentation), minWidth, maxWidth);
+    if (presentation.contains('#') ||
+        RegExp(r'^[0-9]+$').hasMatch(presentation)) {
+      return _applyWidthConstraints(
+          _formatNumericPattern(value, presentation), minWidth, maxWidth);
     }
 
     // Check for grouping separator
@@ -665,7 +737,8 @@ class DateTimeFunctions {
   }
 
   /// Apply width constraints to a string.
-  static String _applyWidthConstraints(String str, int? minWidth, int? maxWidth) {
+  static String _applyWidthConstraints(
+      String str, int? minWidth, int? maxWidth) {
     // Apply minimum width with zero padding for numeric strings
     if (minWidth != null && str.length < minWidth) {
       // Check if string is numeric (might have leading sign)
@@ -724,10 +797,14 @@ class DateTimeFunctions {
   static String _ordinalSuffix(int n) {
     if (n >= 11 && n <= 13) return 'th';
     switch (n % 10) {
-      case 1: return 'st';
-      case 2: return 'nd';
-      case 3: return 'rd';
-      default: return 'th';
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
     }
   }
 
@@ -735,9 +812,19 @@ class DateTimeFunctions {
   static String _toRomanNumeral(int num) {
     if (num <= 0) return num.toString();
     final romanNumerals = [
-      ['M', 1000], ['CM', 900], ['D', 500], ['CD', 400],
-      ['C', 100], ['XC', 90], ['L', 50], ['XL', 40],
-      ['X', 10], ['IX', 9], ['V', 5], ['IV', 4], ['I', 1]
+      ['M', 1000],
+      ['CM', 900],
+      ['D', 500],
+      ['CD', 400],
+      ['C', 100],
+      ['XC', 90],
+      ['L', 50],
+      ['XL', 40],
+      ['X', 10],
+      ['IX', 9],
+      ['V', 5],
+      ['IV', 4],
+      ['I', 1]
     ];
     final result = StringBuffer();
     var remaining = num;
@@ -759,24 +846,53 @@ class DateTimeFunctions {
     var remaining = num;
     while (remaining > 0) {
       remaining--;
-      final letter = String.fromCharCode((remaining % 26) + (uppercase ? 65 : 97));
+      final letter =
+          String.fromCharCode((remaining % 26) + (uppercase ? 65 : 97));
       result.write(letter);
       remaining ~/= 26;
     }
     return result.toString().split('').reversed.join();
   }
 
-
   /// Converts a number to words.
   static String _toWords(int num) {
     if (num == 0) return 'zero';
     if (num < 0) return 'minus ${_toWords(-num)}';
 
-    const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
-        'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
-        'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
-    const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty',
-        'seventy', 'eighty', 'ninety'];
+    const ones = [
+      '',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+      'thirteen',
+      'fourteen',
+      'fifteen',
+      'sixteen',
+      'seventeen',
+      'eighteen',
+      'nineteen'
+    ];
+    const tens = [
+      '',
+      '',
+      'twenty',
+      'thirty',
+      'forty',
+      'fifty',
+      'sixty',
+      'seventy',
+      'eighty',
+      'ninety'
+    ];
 
     String helper(int n) {
       if (n < 20) return ones[n];
@@ -808,14 +924,52 @@ class DateTimeFunctions {
     if (num == 0) return 'zeroth';
     if (num < 0) return 'minus ${_toOrdinalWords(-num)}';
 
-    const ordinalOnes = ['', 'first', 'second', 'third', 'fourth', 'fifth',
-        'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth',
-        'thirteenth', 'fourteenth', 'fifteenth', 'sixteenth', 'seventeenth',
-        'eighteenth', 'nineteenth'];
-    const ordinalTens = ['', '', 'twentieth', 'thirtieth', 'fortieth',
-        'fiftieth', 'sixtieth', 'seventieth', 'eightieth', 'ninetieth'];
-    const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty',
-        'seventy', 'eighty', 'ninety'];
+    const ordinalOnes = [
+      '',
+      'first',
+      'second',
+      'third',
+      'fourth',
+      'fifth',
+      'sixth',
+      'seventh',
+      'eighth',
+      'ninth',
+      'tenth',
+      'eleventh',
+      'twelfth',
+      'thirteenth',
+      'fourteenth',
+      'fifteenth',
+      'sixteenth',
+      'seventeenth',
+      'eighteenth',
+      'nineteenth'
+    ];
+    const ordinalTens = [
+      '',
+      '',
+      'twentieth',
+      'thirtieth',
+      'fortieth',
+      'fiftieth',
+      'sixtieth',
+      'seventieth',
+      'eightieth',
+      'ninetieth'
+    ];
+    const tens = [
+      '',
+      '',
+      'twenty',
+      'thirty',
+      'forty',
+      'fifty',
+      'sixty',
+      'seventy',
+      'eighty',
+      'ninety'
+    ];
 
     if (num < 20) return ordinalOnes[num];
     if (num < 100) {
@@ -827,14 +981,21 @@ class DateTimeFunctions {
     // For larger numbers, convert to words and add suffix
     final words = _toWords(num);
     // Handle special ending cases
-    if (words.endsWith('one')) return '${words.substring(0, words.length - 3)}first';
-    if (words.endsWith('two')) return '${words.substring(0, words.length - 3)}second';
-    if (words.endsWith('three')) return '${words.substring(0, words.length - 5)}third';
-    if (words.endsWith('five')) return '${words.substring(0, words.length - 4)}fifth';
+    if (words.endsWith('one'))
+      return '${words.substring(0, words.length - 3)}first';
+    if (words.endsWith('two'))
+      return '${words.substring(0, words.length - 3)}second';
+    if (words.endsWith('three'))
+      return '${words.substring(0, words.length - 5)}third';
+    if (words.endsWith('five'))
+      return '${words.substring(0, words.length - 4)}fifth';
     if (words.endsWith('eight')) return '${words}h';
-    if (words.endsWith('nine')) return '${words.substring(0, words.length - 4)}ninth';
-    if (words.endsWith('twelve')) return '${words.substring(0, words.length - 6)}twelfth';
-    if (words.endsWith('y')) return '${words.substring(0, words.length - 1)}ieth';
+    if (words.endsWith('nine'))
+      return '${words.substring(0, words.length - 4)}ninth';
+    if (words.endsWith('twelve'))
+      return '${words.substring(0, words.length - 6)}twelfth';
+    if (words.endsWith('y'))
+      return '${words.substring(0, words.length - 1)}ieth';
     return '${words}th';
   }
 
@@ -860,7 +1021,8 @@ class DateTimeFunctions {
       // Check if this week belongs to next year
       final nextYearJan4 = DateTime.utc(dt.year + 1, 1, 4);
       final nextWeekday = nextYearJan4.weekday;
-      final nextFirstMonday = nextYearJan4.subtract(Duration(days: nextWeekday - 1));
+      final nextFirstMonday =
+          nextYearJan4.subtract(Duration(days: nextWeekday - 1));
       if (!dt.isBefore(nextFirstMonday)) {
         return 1;
       }
@@ -886,7 +1048,8 @@ class DateTimeFunctions {
   /// Returns both the week number and the month containing the Thursday.
   static (int week, int month, int year) _weekOfMonthInfo(DateTime dt) {
     // Find the Monday of the week containing dt
-    final daysFromMonday = (dt.weekday - 1);  // Monday = 1, so Monday = 0 days back
+    final daysFromMonday =
+        (dt.weekday - 1); // Monday = 1, so Monday = 0 days back
     final monday = dt.subtract(Duration(days: daysFromMonday));
 
     // Find Thursday of the same week (Thursday determines which month the week belongs to)
@@ -902,10 +1065,12 @@ class DateTimeFunctions {
     DateTime firstThursday;
     if (firstOfWeekMonth.weekday <= 4) {
       // Thursday is on or after the 1st
-      firstThursday = firstOfWeekMonth.add(Duration(days: 4 - firstOfWeekMonth.weekday));
+      firstThursday =
+          firstOfWeekMonth.add(Duration(days: 4 - firstOfWeekMonth.weekday));
     } else {
       // Thursday is in the next week
-      firstThursday = firstOfWeekMonth.add(Duration(days: 11 - firstOfWeekMonth.weekday));
+      firstThursday =
+          firstOfWeekMonth.add(Duration(days: 11 - firstOfWeekMonth.weekday));
     }
 
     // Week number is 1 + number of weeks between first Thursday and this Thursday
@@ -953,15 +1118,16 @@ class DateTimeFunctions {
         }
         final closeBracket = picture.indexOf(']', i);
         if (closeBracket < 0) {
-          throw JsonataException('D3135',
-              'Picture string contains unclosed bracket',
+          throw JsonataException(
+              'D3135', 'Picture string contains unclosed bracket',
               position: 0);
         }
         final component = picture.substring(i + 1, closeBracket);
         final cleanComponent = component.replaceAll(RegExp(r'\s'), '');
         if (cleanComponent.isNotEmpty) {
           final specifier = cleanComponent[0];
-          final presentation = cleanComponent.length > 1 ? cleanComponent.substring(1) : '';
+          final presentation =
+              cleanComponent.length > 1 ? cleanComponent.substring(1) : '';
 
           // D3132: Validate the component specifier is known
           const validSpecifiers = 'YMDdFWwXxHhPmsfZzCE';
@@ -985,7 +1151,8 @@ class DateTimeFunctions {
             }
           }
 
-          parts.add(_PicturePart.marker(_PictureComponent(specifier, presentation)));
+          parts.add(
+              _PicturePart.marker(_PictureComponent(specifier, presentation)));
         }
         i = closeBracket + 1;
       } else if (char == ']') {
@@ -1015,7 +1182,8 @@ class DateTimeFunctions {
     // Build regex from parts
     // For consecutive integer components, use fixed widths
     final regexParts = <String>[];
-    final markerIndices = <int>[]; // indices of capturing groups that are markers
+    final markerIndices =
+        <int>[]; // indices of capturing groups that are markers
 
     for (var partIdx = 0; partIdx < parts.length; partIdx++) {
       final part = parts[partIdx];
@@ -1035,7 +1203,8 @@ class DateTimeFunctions {
         // Generate regex for this marker
         // If this and next are consecutive numeric components, use fixed width
         final regex = _generateComponentRegex(part.component!,
-            fixedWidth: nextIsNumericMarker && _isNumericComponent(part.component!));
+            fixedWidth:
+                nextIsNumericMarker && _isNumericComponent(part.component!));
         regexParts.add('($regex)');
         markerIndices.add(partIdx);
       }
@@ -1202,7 +1371,15 @@ class DateTimeFunctions {
 
     // Determine if only time was specified (no date components)
     final hasTimeOnly = (hasH || hash || hasm || hass || hasf || hasP) &&
-        !hasY && !hasM && !hasD && !hasd && !hasX && !hasW && !hasw && !hasx && !hasF;
+        !hasY &&
+        !hasM &&
+        !hasD &&
+        !hasd &&
+        !hasX &&
+        !hasW &&
+        !hasw &&
+        !hasx &&
+        !hasF;
 
     // Default unspecified date parts to today if only time was specified
     if (hasTimeOnly) {
@@ -1218,7 +1395,8 @@ class DateTimeFunctions {
       day = targetDate.day;
     }
 
-    final dt = DateTime.utc(year, month, day, hour, minute, second, millisecond);
+    final dt =
+        DateTime.utc(year, month, day, hour, minute, second, millisecond);
     // Apply timezone offset (convert from local to UTC)
     return dt.millisecondsSinceEpoch - tzOffsetMinutes * 60 * 1000;
   }
@@ -1235,11 +1413,11 @@ class DateTimeFunctions {
   static bool _isNumericComponent(_PictureComponent comp) {
     final presentation = comp.presentation.toLowerCase();
     // Numeric if it's digits (not name, word, roman, or letter-based)
-    if (presentation.startsWith('n')) return false;  // Name presentation
-    if (presentation.startsWith('w')) return false;  // Word presentation
-    if (presentation == 'i') return false;  // Roman numerals
-    if (presentation == 'a') return false;  // Letter-based
-    if (comp.specifier == 'P') return false;  // AM/PM
+    if (presentation.startsWith('n')) return false; // Name presentation
+    if (presentation.startsWith('w')) return false; // Word presentation
+    if (presentation == 'i') return false; // Roman numerals
+    if (presentation == 'a') return false; // Letter-based
+    if (comp.specifier == 'P') return false; // AM/PM
     // Default is numeric for Y, M, D, d, H, h, m, s, f
     return 'YMDdHhmsf'.contains(comp.specifier);
   }
@@ -1262,7 +1440,8 @@ class DateTimeFunctions {
   }
 
   /// Generate regex pattern for a picture component.
-  static String _generateComponentRegex(_PictureComponent comp, {bool fixedWidth = false}) {
+  static String _generateComponentRegex(_PictureComponent comp,
+      {bool fixedWidth = false}) {
     final specifier = comp.specifier;
     final presentation = comp.presentation;
 
@@ -1428,7 +1607,15 @@ class DateTimeFunctions {
 
   /// Convert Roman numeral string to integer.
   static int _fromRomanNumeral(String roman) {
-    final values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000};
+    final values = {
+      'I': 1,
+      'V': 5,
+      'X': 10,
+      'L': 50,
+      'C': 100,
+      'D': 500,
+      'M': 1000
+    };
     var result = 0;
     var prev = 0;
     for (var i = roman.length - 1; i >= 0; i--) {
@@ -1443,37 +1630,83 @@ class DateTimeFunctions {
     return result;
   }
 
-
   /// Convert words to a number.
   static int _fromWords(String words) {
     final normalized = words.toLowerCase().trim();
 
     // Handle common word numbers
     final ones = {
-      'zero': 0, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
-      'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
-      'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14,
-      'fifteen': 15, 'sixteen': 16, 'seventeen': 17, 'eighteen': 18,
-      'nineteen': 19, 'first': 1, 'second': 2, 'third': 3, 'fourth': 4,
-      'fifth': 5, 'sixth': 6, 'seventh': 7, 'eighth': 8, 'ninth': 9,
-      'tenth': 10, 'eleventh': 11, 'twelfth': 12
+      'zero': 0,
+      'one': 1,
+      'two': 2,
+      'three': 3,
+      'four': 4,
+      'five': 5,
+      'six': 6,
+      'seven': 7,
+      'eight': 8,
+      'nine': 9,
+      'ten': 10,
+      'eleven': 11,
+      'twelve': 12,
+      'thirteen': 13,
+      'fourteen': 14,
+      'fifteen': 15,
+      'sixteen': 16,
+      'seventeen': 17,
+      'eighteen': 18,
+      'nineteen': 19,
+      'first': 1,
+      'second': 2,
+      'third': 3,
+      'fourth': 4,
+      'fifth': 5,
+      'sixth': 6,
+      'seventh': 7,
+      'eighth': 8,
+      'ninth': 9,
+      'tenth': 10,
+      'eleventh': 11,
+      'twelfth': 12
     };
 
     // Ordinal forms that end with -th (e.g., twenty-first, thirty-second)
     final ordinalOnes = {
-      'first': 1, 'second': 2, 'third': 3, 'fourth': 4, 'fifth': 5,
-      'sixth': 6, 'seventh': 7, 'eighth': 8, 'ninth': 9
+      'first': 1,
+      'second': 2,
+      'third': 3,
+      'fourth': 4,
+      'fifth': 5,
+      'sixth': 6,
+      'seventh': 7,
+      'eighth': 8,
+      'ninth': 9
     };
 
     final tens = {
-      'twenty': 20, 'thirty': 30, 'forty': 40, 'fifty': 50,
-      'sixty': 60, 'seventy': 70, 'eighty': 80, 'ninety': 90,
-      'twentieth': 20, 'thirtieth': 30, 'fortieth': 40, 'fiftieth': 50,
-      'sixtieth': 60, 'seventieth': 70, 'eightieth': 80, 'ninetieth': 90
+      'twenty': 20,
+      'thirty': 30,
+      'forty': 40,
+      'fifty': 50,
+      'sixty': 60,
+      'seventy': 70,
+      'eighty': 80,
+      'ninety': 90,
+      'twentieth': 20,
+      'thirtieth': 30,
+      'fortieth': 40,
+      'fiftieth': 50,
+      'sixtieth': 60,
+      'seventieth': 70,
+      'eightieth': 80,
+      'ninetieth': 90
     };
 
     final multipliers = {
-      'hundred': 100, 'thousand': 1000, 'million': 1000000, 'billion': 1000000000
+      'hundred': 100,
+      'thousand': 1000,
+      'million': 1000000,
+      'billion': 1000000000
     };
 
     // Simple single word lookup
@@ -1521,7 +1754,6 @@ class DateTimeFunctions {
 
     return result + current;
   }
-
 }
 
 /// Helper class to hold picture component information.

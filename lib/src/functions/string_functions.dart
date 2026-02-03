@@ -52,7 +52,8 @@ class StringFunctions {
     return undefined;
   }
 
-  static dynamic _substring(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _substring(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final str = args[0];
     if (isUndefined(str) || str is! String) return undefined;
@@ -70,7 +71,8 @@ class StringFunctions {
     return str.substring(actualStart, end.clamp(actualStart, str.length));
   }
 
-  static dynamic _substringBefore(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _substringBefore(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.length < 2) return undefined;
     final str = args[0];
     final chars = args[1];
@@ -81,7 +83,8 @@ class StringFunctions {
     return str.substring(0, index);
   }
 
-  static dynamic _substringAfter(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _substringAfter(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.length < 2) return undefined;
     final str = args[0];
     final chars = args[1];
@@ -92,7 +95,8 @@ class StringFunctions {
     return str.substring(index + chars.length);
   }
 
-  static dynamic _uppercase(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _uppercase(
+      List<dynamic> args, dynamic input, Environment env) {
     // In context syntax like a.$uppercase(b), args[0] is context (might be object)
     // and args[1] is the actual argument. Check for valid string in order.
     dynamic str;
@@ -107,7 +111,8 @@ class StringFunctions {
     return (str as String).toUpperCase();
   }
 
-  static dynamic _lowercase(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _lowercase(
+      List<dynamic> args, dynamic input, Environment env) {
     // In context syntax like a.$lowercase(b), args[0] is context (might be object)
     // and args[1] is the actual argument. Check for valid string in order.
     dynamic str;
@@ -230,8 +235,9 @@ class StringFunctions {
     // Handle string pattern
     if (pattern is String) {
       if (replacement is! String) return undefined;
-      final limit =
-          args.length > limitArgIndex ? (args[limitArgIndex] as num).toInt() : -1;
+      final limit = args.length > limitArgIndex
+          ? (args[limitArgIndex] as num).toInt()
+          : -1;
       if (limit < 0) {
         return str.replaceAll(pattern, replacement);
       }
@@ -247,8 +253,9 @@ class StringFunctions {
 
     // Handle regex pattern
     if (pattern is JsonataRegex) {
-      final limit =
-          args.length > limitArgIndex ? (args[limitArgIndex] as num).toInt() : -1;
+      final limit = args.length > limitArgIndex
+          ? (args[limitArgIndex] as num).toInt()
+          : -1;
       if (limit == 0) return str;
 
       final matches = pattern.allMatches(str).toList();
@@ -275,7 +282,8 @@ class StringFunctions {
       }
 
       // Apply limit if specified
-      final effectiveMatches = limit > 0 ? matches.take(limit).toList() : matches;
+      final effectiveMatches =
+          limit > 0 ? matches.take(limit).toList() : matches;
 
       // Handle function replacement (LambdaClosure from JSONata expressions)
       if (replacement is LambdaClosure) {
@@ -354,7 +362,8 @@ class StringFunctions {
             final subNum = int.parse(numStr.substring(0, len));
             if (subNum >= 1 && subNum <= match.groupCount) {
               result.write(match.group(subNum) ?? '');
-              result.write(numStr.substring(len)); // Remaining digits as literal
+              result
+                  .write(numStr.substring(len)); // Remaining digits as literal
               i = j;
               found = true;
               break;
@@ -466,7 +475,8 @@ class StringFunctions {
     return results;
   }
 
-  static dynamic _base64encode(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _base64encode(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final str = args[0];
     if (str is! String) return undefined;
@@ -475,11 +485,11 @@ class StringFunctions {
     return str; // Placeholder
   }
 
-  static dynamic _base64decode(List<dynamic> args, dynamic input, Environment env) {
+  static dynamic _base64decode(
+      List<dynamic> args, dynamic input, Environment env) {
     if (args.isEmpty) return undefined;
     final str = args[0];
     if (str is! String) return undefined;
     return str; // Placeholder
   }
 }
-

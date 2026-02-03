@@ -95,4 +95,3 @@ class ObjectFunctions {
     return obj[key] ?? undefined;
   }
 }
-

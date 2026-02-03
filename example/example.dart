@@ -33,7 +33,9 @@ void main() {
   // Output: 144.94
 
   // Object construction
-  print(Jsonata(r'{"total": $sum(Account.Order.Price), "count": $count(Account.Order)}').evaluate(data));
+  print(Jsonata(
+          r'{"total": $sum(Account.Order.Price), "count": $count(Account.Order)}')
+      .evaluate(data));
   // Output: {total: 84.97, count: 3}
 
   // Object grouping (aggregate by key)
@@ -41,7 +43,9 @@ void main() {
   // Output: {Hat: 9.99, Shoes: 49.99, Shirt: 24.99}
 
   // Lambda and higher-order functions
-  print(Jsonata(r'$map(Account.Order, function($o) { $o.Product & ": $" & $string($o.Price) })').evaluate(data));
+  print(Jsonata(
+          r'$map(Account.Order, function($o) { $o.Product & ": $" & $string($o.Price) })')
+      .evaluate(data));
   // Output: [Hat: $9.99, Shoes: $49.99, Shirt: $24.99]
 
   // Custom function
@@ -54,4 +58,3 @@ void main() {
   print(expr.evaluate(data));
   // Output: [8.991, 44.991, 22.491]
 }
-

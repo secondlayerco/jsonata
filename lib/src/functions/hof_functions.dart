@@ -72,7 +72,9 @@ class HofFunctions {
       }
     }
 
-    return result.isEmpty ? undefined : (result.length == 1 ? result.first : result);
+    return result.isEmpty
+        ? undefined
+        : (result.length == 1 ? result.first : result);
   }
 
   /// $filter(array, function) - filters elements by predicate
@@ -102,7 +104,9 @@ class HofFunctions {
       }
     }
 
-    return result.isEmpty ? undefined : (result.length == 1 ? result.first : result);
+    return result.isEmpty
+        ? undefined
+        : (result.length == 1 ? result.first : result);
   }
 
   /// $reduce(array, function, init?) - reduces array to single value
@@ -200,4 +204,3 @@ class HofFunctions {
     return true;
   }
 }
-

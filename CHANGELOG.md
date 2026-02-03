@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+- Fixed LICENSE file format for proper OSI license recognition
+- Fixed static analysis warnings and applied code formatting
+
 ## 0.3.1
 
 - **Performance optimizations** - Significant performance improvements for common query patterns:

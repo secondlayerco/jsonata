@@ -14,7 +14,8 @@ class _ProcessResult {
   final List<ParentSlot> seekingParent;
   final bool tuple;
 
-  _ProcessResult(this.node, {
+  _ProcessResult(
+    this.node, {
     this.seekingParent = const [],
     this.tuple = false,
   });
@@ -759,9 +760,10 @@ class Parser {
       keepArray: node.keepArray,
     );
 
-    final tuple = leftResult.tuple || rightResult.tuple ||
-                  seekingParent.isNotEmpty ||
-                  _hasAncestorBinding(modifiedLeft);
+    final tuple = leftResult.tuple ||
+        rightResult.tuple ||
+        seekingParent.isNotEmpty ||
+        _hasAncestorBinding(modifiedLeft);
 
     return _ProcessResult(newPath, seekingParent: seekingParent, tuple: tuple);
   }
@@ -827,7 +829,8 @@ class Parser {
     }
     if (node is BlockNode && node.expressions.isNotEmpty) {
       // Look in the last expression
-      final (modifiedExpr, continueUp) = _seekParent(node.expressions.last, slot);
+      final (modifiedExpr, continueUp) =
+          _seekParent(node.expressions.last, slot);
       if (!continueUp) {
         // Update the block with modified last expression
         final newExprs = [...node.expressions];
@@ -844,22 +847,42 @@ class Parser {
         // Skip the right side, go straight to left
         final (modifiedLeft, continueLeft) = _seekParent(node.left, slot);
         if (!continueLeft) {
-          return (PathNode(node.position, modifiedLeft, node.right, keepArray: node.keepArray), false);
+          return (
+            PathNode(node.position, modifiedLeft, node.right,
+                keepArray: node.keepArray),
+            false
+          );
         }
-        return (PathNode(node.position, modifiedLeft, node.right, keepArray: node.keepArray), true);
+        return (
+          PathNode(node.position, modifiedLeft, node.right,
+              keepArray: node.keepArray),
+          true
+        );
       }
 
       // Work backwards through path: right first, then left
       final (modifiedRight, continueRight) = _seekParent(node.right, slot);
       if (!continueRight) {
-        return (PathNode(node.position, node.left, modifiedRight, keepArray: node.keepArray), false);
+        return (
+          PathNode(node.position, node.left, modifiedRight,
+              keepArray: node.keepArray),
+          false
+        );
       }
       // Continue to left
       final (modifiedLeft, continueLeft) = _seekParent(node.left, slot);
       if (!continueLeft) {
-        return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), false);
+        return (
+          PathNode(node.position, modifiedLeft, modifiedRight,
+              keepArray: node.keepArray),
+          false
+        );
       }
-      return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), true);
+      return (
+        PathNode(node.position, modifiedLeft, modifiedRight,
+            keepArray: node.keepArray),
+        true
+      );
     }
     if (node is FilterNode) {
       // Seek through the filtered expression
@@ -891,15 +914,21 @@ class Parser {
     }
 
     final newNode = FilterNode(node.position, modifiedExpr, predResult.node);
-    final tuple = exprResult.tuple || predResult.tuple || _hasAncestorBinding(modifiedExpr);
+    final tuple = exprResult.tuple ||
+        predResult.tuple ||
+        _hasAncestorBinding(modifiedExpr);
     return _ProcessResult(newNode, seekingParent: seekingParent, tuple: tuple);
   }
 
   _ProcessResult _processBinaryNode(BinaryNode node) {
     final leftResult = _processNode(node.left);
     final rightResult = _processNode(node.right);
-    final seekingParent = [...leftResult.seekingParent, ...rightResult.seekingParent];
-    final newNode = BinaryNode(node.position, node.operator, leftResult.node, rightResult.node);
+    final seekingParent = [
+      ...leftResult.seekingParent,
+      ...rightResult.seekingParent
+    ];
+    final newNode = BinaryNode(
+        node.position, node.operator, leftResult.node, rightResult.node);
     return _ProcessResult(newNode, seekingParent: seekingParent);
   }
 
@@ -917,7 +946,8 @@ class Parser {
       elements.add(result.node);
       seekingParent.addAll(result.seekingParent);
     }
-    return _ProcessResult(ArrayNode(node.position, elements), seekingParent: seekingParent);
+    return _ProcessResult(ArrayNode(node.position, elements),
+        seekingParent: seekingParent);
   }
 
   _ProcessResult _processObjectNode(ObjectNode node) {
@@ -930,7 +960,8 @@ class Parser {
       seekingParent.addAll(keyResult.seekingParent);
       seekingParent.addAll(valueResult.seekingParent);
     }
-    return _ProcessResult(ObjectNode(node.position, pairs), seekingParent: seekingParent);
+    return _ProcessResult(ObjectNode(node.position, pairs),
+        seekingParent: seekingParent);
   }
 
   _ProcessResult _processBlockNode(BlockNode node) {
@@ -941,13 +972,15 @@ class Parser {
       expressions.add(result.node);
       seekingParent.addAll(result.seekingParent);
     }
-    return _ProcessResult(BlockNode(node.position, expressions), seekingParent: seekingParent);
+    return _ProcessResult(BlockNode(node.position, expressions),
+        seekingParent: seekingParent);
   }
 
   _ProcessResult _processConditionalNode(ConditionalNode node) {
     final condResult = _processNode(node.condition);
     final thenResult = _processNode(node.thenExpr);
-    final elseResult = node.elseExpr != null ? _processNode(node.elseExpr!) : null;
+    final elseResult =
+        node.elseExpr != null ? _processNode(node.elseExpr!) : null;
 
     final seekingParent = [
       ...condResult.seekingParent,
@@ -993,7 +1026,8 @@ class Parser {
   _ProcessResult _processTransformNode(TransformNode node) {
     final exprResult = _processNode(node.expr);
     final updateResult = _processNode(node.update);
-    final deleteResult = node.delete != null ? _processNode(node.delete!) : null;
+    final deleteResult =
+        node.delete != null ? _processNode(node.delete!) : null;
 
     final seekingParent = [
       ...exprResult.seekingParent,
@@ -1041,13 +1075,16 @@ class Parser {
   _ProcessResult _processFocusNode(FocusNode node) {
     final exprResult = _processNode(node.expr);
     final newNode = FocusNode(node.position, exprResult.node, node.variable);
-    return _ProcessResult(newNode, seekingParent: exprResult.seekingParent, tuple: true);
+    return _ProcessResult(newNode,
+        seekingParent: exprResult.seekingParent, tuple: true);
   }
 
   _ProcessResult _processIndexBindNode(IndexBindNode node) {
     final exprResult = _processNode(node.expr);
-    final newNode = IndexBindNode(node.position, exprResult.node, node.variable);
-    return _ProcessResult(newNode, seekingParent: exprResult.seekingParent, tuple: true);
+    final newNode =
+        IndexBindNode(node.position, exprResult.node, node.variable);
+    return _ProcessResult(newNode,
+        seekingParent: exprResult.seekingParent, tuple: true);
   }
 
   _ProcessResult _processKeepArrayNode(KeepArrayNode node) {
@@ -1060,13 +1097,19 @@ class Parser {
     final exprResult = _processNode(node.expr);
     final indexResult = _processNode(node.index);
     final newNode = IndexNode(node.position, exprResult.node, indexResult.node);
-    return _ProcessResult(newNode, seekingParent: [...exprResult.seekingParent, ...indexResult.seekingParent]);
+    return _ProcessResult(newNode, seekingParent: [
+      ...exprResult.seekingParent,
+      ...indexResult.seekingParent
+    ]);
   }
 
   _ProcessResult _processRangeNode(RangeNode node) {
     final startResult = _processNode(node.start);
     final endResult = _processNode(node.end);
     final newNode = RangeNode(node.position, startResult.node, endResult.node);
-    return _ProcessResult(newNode, seekingParent: [...startResult.seekingParent, ...endResult.seekingParent]);
+    return _ProcessResult(newNode, seekingParent: [
+      ...startResult.seekingParent,
+      ...endResult.seekingParent
+    ]);
   }
 }
