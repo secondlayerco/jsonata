@@ -411,7 +411,7 @@ class Evaluator {
 
   /// Standard path evaluation without parent reference tracking.
   dynamic _evaluatePathStandard(PathNode node, dynamic input, Environment env) {
-    final left = evaluate(node.left, input, env);
+    var left = evaluate(node.left, input, env);
     if (isUndefined(left)) {
       return undefined;
     }
@@ -424,6 +424,27 @@ class Evaluator {
     }
     if (!keepAsArray && node.left is! NameNode) {
       keepAsArray = _containsKeepArray(node.left);
+    }
+
+    // If the left side is a path ending with an ArrayNode, we need to flatten
+    // the result before projecting the right side over it.
+    // This handles cases like `arr.[field].next` where the array constructor
+    // results should be flattened before accessing .next
+    if (left is List && node.left is PathNode) {
+      final leftPath = node.left as PathNode;
+      if (leftPath.right is ArrayNode) {
+        // Flatten one level of nested arrays
+        final flattened = <dynamic>[];
+        for (final item in left) {
+          if (item is List) {
+            flattened.addAll(item);
+          } else if (!isUndefined(item)) {
+            flattened.add(item);
+          }
+        }
+        left = flattened.isEmpty ? undefined : (flattened.length == 1 ? flattened.first : flattened);
+        if (isUndefined(left)) return undefined;
+      }
     }
 
     // Helper to evaluate the right side of a path

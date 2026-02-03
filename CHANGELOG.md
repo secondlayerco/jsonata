@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1
+
+- **Performance optimizations** - Significant performance improvements for common query patterns:
+  - Fast-path for simple name-only path expressions (`a.b.c`)
+  - Fast-path for array index access (positive and negative indices)
+  - Fast-path for paths with simple numeric index filters (`a.b[0].c[0]`)
+  - Fast-path for simple equality filter predicates (`arr[field = 'value']`)
+  - Fast-path for array projection in path expressions (`arr.fieldName`)
+  - Optimized `normalizeResult` to avoid deep traversal of raw JSON
+  - Optimized path evaluation for simple left-side patterns
+- **Bug fix** - Fixed array constructor flattening in path expressions (`arr.[field].next`)
+
 ## 0.3.0
 
 - **Parent operator** (`%`) - Reference parent objects in path expressions
