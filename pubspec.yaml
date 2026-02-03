@@ -1,6 +1,6 @@
 name: jsonata_dart
 description: A pure Dart implementation of JSONata - JSON query and transformation language for querying and transforming JSON data.
-version: 0.2.0
+version: 0.3.0
 repository: https://github.com/secondlayerco/jsonata
 issue_tracker: https://github.com/secondlayerco/jsonata/issues
 

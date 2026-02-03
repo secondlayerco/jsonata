@@ -50,6 +50,19 @@ void main() {
 
   // Transform operator (function chaining)
   print(Jsonata(r'"hello" ~> $uppercase ~> $length').evaluate({})); // 5
+
+  // Parent operator (access parent context)
+  print(Jsonata(r'Account.Order.Product{`Product Name`: %.OrderID}').evaluate(data));
+  // Groups products by name with their parent order ID
+
+  // Sort operator
+  print(Jsonata(r'Account.Order.Price^($)').evaluate(data)); // [9.99, 49.99]
+
+  // Focus operator (bind current item to variable)
+  print(Jsonata(r'Account.Order@$o.Product.{ "product": Product, "orderId": $o.OrderID }').evaluate(data));
+
+  // Index bind operator (bind iteration index)
+  print(Jsonata(r'Account.Order#$i.{ "index": $i, "product": Product }').evaluate(data));
 }
 ```
 
@@ -75,12 +88,13 @@ void main() {
 - **Variable binding** - `$variable := value`
 - **Partial application** - Using `?` placeholder
 - **Custom functions** - Register your own functions
+- **Parent operator** - `%` for accessing parent context in path expressions
+- **Sort operator** - `^(expr)` for sorting arrays
+- **Focus operator** - `@$var` for binding current item to a variable
+- **Index bind operator** - `#$var` for binding iteration index to a variable
 
 ### Not Yet Implemented
 
-- Parent operator (`%`)
-- Sort operator (`^(...)`)
-- Focus operator (`@`)
 - Async expressions
 
 ## Differences from JavaScript JSONata

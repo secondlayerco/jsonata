@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- **Parent operator** (`%`) - Reference parent objects in path expressions
+- **Sort operator** (`^(...)`) - Sort arrays by specified keys with ascending/descending support
+- **Focus operator** (`@$var`) - Bind current item to a variable while keeping navigation context at parent level
+- **Index bind operator** (`#$var`) - Bind iteration index to a variable
+- Fixed contiguous focus steps handling per JSONata specification
+- Fixed `$keys` to unwrap single-element arrays
+- 726 tests passing (672 suite + 54 unit)
+
 ## 0.2.0
 
 - **Date/time functions**:
