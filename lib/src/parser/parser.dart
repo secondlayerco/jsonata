@@ -2,6 +2,24 @@ import '../errors/jsonata_exception.dart';
 import 'ast.dart';
 import 'tokenizer.dart';
 
+/// Internal class to track parent nodes during AST processing.
+class _ParentInfo {
+  final ParentSlot slot;
+  _ParentInfo(this.slot);
+}
+
+/// Result of processing a node for ancestry.
+class _ProcessResult {
+  final AstNode node;
+  final List<ParentSlot> seekingParent;
+  final bool tuple;
+
+  _ProcessResult(this.node, {
+    this.seekingParent = const [],
+    this.tuple = false,
+  });
+}
+
 /// Parser for JSONata expressions using Pratt parsing (top-down operator precedence).
 ///
 /// Converts a stream of tokens into an Abstract Syntax Tree (AST).
@@ -331,8 +349,16 @@ class Parser {
   AstNode _parseParent() {
     final position = _current.position;
     _advance(); // %
+    // Initial parent node - slot will be assigned during _processAst
     return ParentNode(position);
   }
+
+  // Counters for parent slot labeling
+  int _ancestorLabel = 0;
+  int _ancestorIndex = 0;
+
+  // Track parent nodes that need ancestry resolution
+  final List<_ParentInfo> _ancestry = [];
 
   AstNode _parseLambda() {
     final position = _current.position;
@@ -640,8 +666,350 @@ class Parser {
   /// - Identifying tail calls for optimization
   /// - Other semantic analysis
   AstNode _processAst(AstNode node) {
-    // For now, just return the node as-is
-    // More sophisticated processing can be added later
-    return node;
+    // Reset ancestry tracking
+    _ancestorLabel = 0;
+    _ancestorIndex = 0;
+    _ancestry.clear();
+
+    // Process the AST and resolve ancestry
+    final result = _processNode(node);
+
+    // Check for unresolved parent references at top level
+    if (result.node is ParentNode || result.seekingParent.isNotEmpty) {
+      throw JsonataException(
+        'S0217',
+        "The object representing the 'parent' cannot be derived from this expression",
+        position: node.position,
+      );
+    }
+
+    return result.node;
+  }
+
+  /// Process a node and its children, resolving parent references.
+  _ProcessResult _processNode(AstNode node) {
+    return switch (node) {
+      final ParentNode n => _processParentNode(n),
+      final PathNode n => _processPathNode(n),
+      final FilterNode n => _processFilterNode(n),
+      final BinaryNode n => _processBinaryNode(n),
+      final UnaryNode n => _processUnaryNode(n),
+      final ArrayNode n => _processArrayNode(n),
+      final ObjectNode n => _processObjectNode(n),
+      final BlockNode n => _processBlockNode(n),
+      final ConditionalNode n => _processConditionalNode(n),
+      final LambdaNode n => _processLambdaNode(n),
+      final FunctionCallNode n => _processFunctionCallNode(n),
+      final AssignmentNode n => _processAssignmentNode(n),
+      final TransformNode n => _processTransformNode(n),
+      final SortNode n => _processSortNode(n),
+      final FocusNode n => _processFocusNode(n),
+      final IndexBindNode n => _processIndexBindNode(n),
+      final KeepArrayNode n => _processKeepArrayNode(n),
+      final IndexNode n => _processIndexNode(n),
+      final RangeNode n => _processRangeNode(n),
+      _ => _ProcessResult(node), // Leaf nodes pass through unchanged
+    };
+  }
+
+  /// Process a parent node - assign it a slot.
+  _ProcessResult _processParentNode(ParentNode node) {
+    final slot = ParentSlot(
+      label: '!${_ancestorLabel++}',
+      level: 1,
+      index: _ancestorIndex++,
+    );
+    final newNode = ParentNode(node.position, slot: slot);
+    _ancestry.add(_ParentInfo(slot));
+    return _ProcessResult(newNode, seekingParent: [slot]);
+  }
+
+  /// Process a path node - this is where parent references are resolved.
+  _ProcessResult _processPathNode(PathNode node) {
+    // Process left side first
+    final leftResult = _processNode(node.left);
+
+    // Process right side
+    final rightResult = _processNode(node.right);
+
+    // Collect seeking parents from both sides
+    final seekingParent = <ParentSlot>[...leftResult.seekingParent];
+
+    // Collect all parent slots to resolve from right side
+    // Note: When right is a ParentNode, _processParentNode already adds its slot to seekingParent,
+    // so we don't need to add it again here.
+    final slotsToResolve = <ParentSlot>[...rightResult.seekingParent];
+
+    // Resolve each slot by seeking through the left side
+    var modifiedLeft = leftResult.node;
+    for (final slot in slotsToResolve) {
+      final (newLeft, continueUp) = _seekParent(modifiedLeft, slot);
+      modifiedLeft = newLeft;
+      if (continueUp) {
+        // Couldn't resolve here - propagate up
+        seekingParent.add(slot);
+      }
+    }
+
+    final newPath = PathNode(
+      node.position,
+      modifiedLeft,
+      rightResult.node,
+      keepArray: node.keepArray,
+    );
+
+    final tuple = leftResult.tuple || rightResult.tuple ||
+                  seekingParent.isNotEmpty ||
+                  _hasAncestorBinding(modifiedLeft);
+
+    return _ProcessResult(newPath, seekingParent: seekingParent, tuple: tuple);
+  }
+
+  /// Check if a node or its descendants have ancestor bindings.
+  bool _hasAncestorBinding(AstNode node) {
+    if (node is NameNode && node.ancestor != null) return true;
+    if (node is WildcardNode && node.ancestor != null) return true;
+    if (node is PathNode) {
+      return _hasAncestorBinding(node.left) || _hasAncestorBinding(node.right);
+    }
+    if (node is BlockNode) {
+      return node.expressions.any(_hasAncestorBinding);
+    }
+    return false;
+  }
+
+  /// Seek the parent through a node, decrementing level for name/wildcard,
+  /// incrementing for parent. Returns the possibly modified node and whether resolution continues.
+  /// This mirrors JavaScript's seekParent function.
+  (AstNode node, bool continueUp) _seekParent(AstNode node, ParentSlot slot) {
+    if (node is NameNode) {
+      slot.level--;
+      if (slot.level == 0) {
+        // This node binds the ancestor
+        return (node.withAncestor(slot), false);
+      }
+      return (node, true);
+    }
+    if (node is WildcardNode) {
+      slot.level--;
+      if (slot.level == 0) {
+        // This node binds the ancestor
+        return (node.withAncestor(slot), false);
+      }
+      return (node, true);
+    }
+    if (node is ParentNode) {
+      // Parent of parent - need to go back further
+      slot.level++;
+      return (node, true);
+    }
+    if (node is BlockNode && node.expressions.isNotEmpty) {
+      // Look in the last expression
+      final (modifiedExpr, continueUp) = _seekParent(node.expressions.last, slot);
+      if (!continueUp) {
+        // Update the block with modified last expression
+        final newExprs = [...node.expressions];
+        newExprs[newExprs.length - 1] = modifiedExpr;
+        return (BlockNode(node.position, newExprs), false);
+      }
+      return (node, true);
+    }
+    if (node is PathNode) {
+      // Work backwards through path: right first, then left
+      final (modifiedRight, continueRight) = _seekParent(node.right, slot);
+      if (!continueRight) {
+        return (PathNode(node.position, node.left, modifiedRight, keepArray: node.keepArray), false);
+      }
+      // Continue to left
+      final (modifiedLeft, continueLeft) = _seekParent(node.left, slot);
+      if (!continueLeft) {
+        return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), false);
+      }
+      return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), true);
+    }
+    // For other types, we can't derive parent - error will be caught at top level
+    return (node, true);
+  }
+
+  _ProcessResult _processFilterNode(FilterNode node) {
+    final exprResult = _processNode(node.expr);
+    final predResult = _processNode(node.predicate);
+
+    // Parent refs in predicate can reference the current item (expr)
+    final seekingParent = <ParentSlot>[...exprResult.seekingParent];
+
+    // Resolve parent slots from predicate against the filtered expression
+    var modifiedExpr = exprResult.node;
+    for (final slot in predResult.seekingParent) {
+      final (newExpr, continueUp) = _seekParent(modifiedExpr, slot);
+      modifiedExpr = newExpr;
+      if (continueUp) {
+        seekingParent.add(slot);
+      }
+    }
+
+    final newNode = FilterNode(node.position, modifiedExpr, predResult.node);
+    final tuple = exprResult.tuple || predResult.tuple || _hasAncestorBinding(modifiedExpr);
+    return _ProcessResult(newNode, seekingParent: seekingParent, tuple: tuple);
+  }
+
+  _ProcessResult _processBinaryNode(BinaryNode node) {
+    final leftResult = _processNode(node.left);
+    final rightResult = _processNode(node.right);
+    final seekingParent = [...leftResult.seekingParent, ...rightResult.seekingParent];
+    final newNode = BinaryNode(node.position, node.operator, leftResult.node, rightResult.node);
+    return _ProcessResult(newNode, seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processUnaryNode(UnaryNode node) {
+    final operandResult = _processNode(node.operand);
+    final newNode = UnaryNode(node.position, node.operator, operandResult.node);
+    return _ProcessResult(newNode, seekingParent: operandResult.seekingParent);
+  }
+
+  _ProcessResult _processArrayNode(ArrayNode node) {
+    final seekingParent = <ParentSlot>[];
+    final elements = <AstNode>[];
+    for (final elem in node.elements) {
+      final result = _processNode(elem);
+      elements.add(result.node);
+      seekingParent.addAll(result.seekingParent);
+    }
+    return _ProcessResult(ArrayNode(node.position, elements), seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processObjectNode(ObjectNode node) {
+    final seekingParent = <ParentSlot>[];
+    final pairs = <ObjectPair>[];
+    for (final pair in node.pairs) {
+      final keyResult = _processNode(pair.key);
+      final valueResult = _processNode(pair.value);
+      pairs.add(ObjectPair(keyResult.node, valueResult.node));
+      seekingParent.addAll(keyResult.seekingParent);
+      seekingParent.addAll(valueResult.seekingParent);
+    }
+    return _ProcessResult(ObjectNode(node.position, pairs), seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processBlockNode(BlockNode node) {
+    final seekingParent = <ParentSlot>[];
+    final expressions = <AstNode>[];
+    for (final expr in node.expressions) {
+      final result = _processNode(expr);
+      expressions.add(result.node);
+      seekingParent.addAll(result.seekingParent);
+    }
+    return _ProcessResult(BlockNode(node.position, expressions), seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processConditionalNode(ConditionalNode node) {
+    final condResult = _processNode(node.condition);
+    final thenResult = _processNode(node.thenExpr);
+    final elseResult = node.elseExpr != null ? _processNode(node.elseExpr!) : null;
+
+    final seekingParent = [
+      ...condResult.seekingParent,
+      ...thenResult.seekingParent,
+      if (elseResult != null) ...elseResult.seekingParent,
+    ];
+
+    final newNode = ConditionalNode(
+      node.position,
+      condResult.node,
+      thenResult.node,
+      elseResult?.node,
+    );
+    return _ProcessResult(newNode, seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processLambdaNode(LambdaNode node) {
+    final bodyResult = _processNode(node.body);
+    // Lambda creates a new scope, so parent refs in body stay local
+    final newNode = LambdaNode(node.position, node.parameters, bodyResult.node);
+    return _ProcessResult(newNode);
+  }
+
+  _ProcessResult _processFunctionCallNode(FunctionCallNode node) {
+    final funcResult = _processNode(node.function);
+    final seekingParent = <ParentSlot>[...funcResult.seekingParent];
+    final args = <AstNode>[];
+    for (final arg in node.arguments) {
+      final result = _processNode(arg);
+      args.add(result.node);
+      seekingParent.addAll(result.seekingParent);
+    }
+    final newNode = FunctionCallNode(node.position, funcResult.node, args);
+    return _ProcessResult(newNode, seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processAssignmentNode(AssignmentNode node) {
+    final valueResult = _processNode(node.value);
+    final newNode = AssignmentNode(node.position, node.name, valueResult.node);
+    return _ProcessResult(newNode, seekingParent: valueResult.seekingParent);
+  }
+
+  _ProcessResult _processTransformNode(TransformNode node) {
+    final exprResult = _processNode(node.expr);
+    final updateResult = _processNode(node.update);
+    final deleteResult = node.delete != null ? _processNode(node.delete!) : null;
+
+    final seekingParent = [
+      ...exprResult.seekingParent,
+      ...updateResult.seekingParent,
+      if (deleteResult != null) ...deleteResult.seekingParent,
+    ];
+
+    final newNode = TransformNode(
+      node.position,
+      exprResult.node,
+      updateResult.node,
+      delete: deleteResult?.node,
+    );
+    return _ProcessResult(newNode, seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processSortNode(SortNode node) {
+    final exprResult = _processNode(node.expr);
+    final seekingParent = <ParentSlot>[...exprResult.seekingParent];
+    final terms = <SortTerm>[];
+    for (final term in node.terms) {
+      final keyResult = _processNode(term.expr);
+      terms.add(SortTerm(keyResult.node, descending: term.descending));
+      seekingParent.addAll(keyResult.seekingParent);
+    }
+    final newNode = SortNode(node.position, exprResult.node, terms);
+    return _ProcessResult(newNode, seekingParent: seekingParent);
+  }
+
+  _ProcessResult _processFocusNode(FocusNode node) {
+    final exprResult = _processNode(node.expr);
+    final newNode = FocusNode(node.position, exprResult.node, node.variable);
+    return _ProcessResult(newNode, seekingParent: exprResult.seekingParent, tuple: true);
+  }
+
+  _ProcessResult _processIndexBindNode(IndexBindNode node) {
+    final exprResult = _processNode(node.expr);
+    final newNode = IndexBindNode(node.position, exprResult.node, node.variable);
+    return _ProcessResult(newNode, seekingParent: exprResult.seekingParent, tuple: true);
+  }
+
+  _ProcessResult _processKeepArrayNode(KeepArrayNode node) {
+    final exprResult = _processNode(node.expr);
+    final newNode = KeepArrayNode(node.position, exprResult.node);
+    return _ProcessResult(newNode, seekingParent: exprResult.seekingParent);
+  }
+
+  _ProcessResult _processIndexNode(IndexNode node) {
+    final exprResult = _processNode(node.expr);
+    final indexResult = _processNode(node.index);
+    final newNode = IndexNode(node.position, exprResult.node, indexResult.node);
+    return _ProcessResult(newNode, seekingParent: [...exprResult.seekingParent, ...indexResult.seekingParent]);
+  }
+
+  _ProcessResult _processRangeNode(RangeNode node) {
+    final startResult = _processNode(node.start);
+    final endResult = _processNode(node.end);
+    final newNode = RangeNode(node.position, startResult.node, endResult.node);
+    return _ProcessResult(newNode, seekingParent: [...startResult.seekingParent, ...endResult.seekingParent]);
   }
 }

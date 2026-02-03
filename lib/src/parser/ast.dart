@@ -86,11 +86,30 @@ class NameNode extends AstNode {
   @override
   final bool keepArray;
 
+  /// Ancestor slots bound by this step (for parent operator support).
+  /// Multiple slots can be bound when multiple % operators resolve to the same step.
+  final List<ParentSlot> ancestors;
+
+  /// Legacy getter for single ancestor (returns first or null).
+  ParentSlot? get ancestor => ancestors.isNotEmpty ? ancestors.first : null;
+
+  /// Whether this step uses tuple-based evaluation.
+  final bool tuple;
+
   const NameNode(super.position, this.value,
-      {this.escaped = false, this.keepArray = false});
+      {this.escaped = false, this.keepArray = false, this.ancestors = const [], this.tuple = false});
+
+  /// Create a copy with an additional ancestor slot.
+  NameNode withAncestor(ParentSlot slot) => NameNode(
+    position, value,
+    escaped: escaped,
+    keepArray: keepArray,
+    ancestors: [...ancestors, slot],
+    tuple: true,
+  );
 
   @override
-  String toString() => 'NameNode($value)';
+  String toString() => 'NameNode($value${ancestor != null ? ', ancestor=$ancestor' : ''})';
 }
 
 /// A variable reference ($name).
@@ -290,10 +309,27 @@ class BlockNode extends AstNode {
 
 /// A wildcard expression (*).
 class WildcardNode extends AstNode {
-  const WildcardNode(super.position);
+  /// Ancestor slots bound by this step (for parent operator support).
+  /// Multiple slots can be bound when multiple % operators resolve to the same step.
+  final List<ParentSlot> ancestors;
+
+  /// Legacy getter for single ancestor (returns first or null).
+  ParentSlot? get ancestor => ancestors.isNotEmpty ? ancestors.first : null;
+
+  /// Whether this step uses tuple-based evaluation.
+  final bool tuple;
+
+  const WildcardNode(super.position, {this.ancestors = const [], this.tuple = false});
+
+  /// Create a copy with an additional ancestor slot.
+  WildcardNode withAncestor(ParentSlot slot) => WildcardNode(
+    position,
+    ancestors: [...ancestors, slot],
+    tuple: true,
+  );
 
   @override
-  String toString() => 'WildcardNode()';
+  String toString() => 'WildcardNode(${ancestors.isNotEmpty ? 'ancestors=$ancestors' : ''})';
 }
 
 /// A descendant wildcard expression (**).
@@ -304,12 +340,33 @@ class DescendantNode extends AstNode {
   String toString() => 'DescendantNode()';
 }
 
-/// A parent reference expression (%).
-class ParentNode extends AstNode {
-  const ParentNode(super.position);
+/// A slot for parent reference tracking.
+class ParentSlot {
+  /// The label for looking up the parent value in the environment.
+  final String label;
+
+  /// The level of ancestry (1 = parent, 2 = grandparent, etc.).
+  /// This is mutable during ancestry resolution.
+  int level;
+
+  /// The index for tracking ancestry order.
+  final int index;
+
+  ParentSlot({required this.label, required this.level, required this.index});
 
   @override
-  String toString() => 'ParentNode()';
+  String toString() => 'ParentSlot($label, level=$level, index=$index)';
+}
+
+/// A parent reference expression (%).
+class ParentNode extends AstNode {
+  /// The slot for looking up the parent value.
+  final ParentSlot? slot;
+
+  const ParentNode(super.position, {this.slot});
+
+  @override
+  String toString() => 'ParentNode(${slot?.label ?? 'unresolved'})';
 }
 
 /// A context reference expression ($).

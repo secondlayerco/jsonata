@@ -37,6 +37,8 @@ const coreGroups = [
   // Date/time tests
   'function-fromMillis',
   'function-tomillis',
+  // Parent operator tests
+  'parent-operator',
 ];
 
 void main() {

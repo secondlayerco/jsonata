@@ -4,8 +4,74 @@ import '../utils/jsonata_regex.dart';
 import '../utils/undefined.dart';
 import 'environment.dart';
 
+/// A tuple containing a value and its evaluation environment (for parent tracking).
+class _Tuple {
+  final dynamic value;
+  final Environment env;
+  _Tuple(this.value, this.env);
+}
+
 /// Evaluates JSONata AST nodes against input data.
 class Evaluator {
+  /// Find all parent slots in an AST node.
+  List<ParentSlot> _findParentSlots(AstNode node) {
+    final slots = <ParentSlot>[];
+    _collectParentSlots(node, slots);
+    return slots;
+  }
+
+  void _collectParentSlots(AstNode node, List<ParentSlot> slots) {
+    switch (node) {
+      case final ParentNode p when p.slot != null:
+        slots.add(p.slot!);
+      case final PathNode p:
+        _collectParentSlots(p.left, slots);
+        _collectParentSlots(p.right, slots);
+      case final FilterNode f:
+        _collectParentSlots(f.expr, slots);
+        _collectParentSlots(f.predicate, slots);
+      case final BinaryNode b:
+        _collectParentSlots(b.left, slots);
+        _collectParentSlots(b.right, slots);
+      case final UnaryNode u:
+        _collectParentSlots(u.operand, slots);
+      case final ArrayNode a:
+        for (final elem in a.elements) {
+          _collectParentSlots(elem, slots);
+        }
+      case final ObjectNode o:
+        for (final pair in o.pairs) {
+          _collectParentSlots(pair.key, slots);
+          _collectParentSlots(pair.value, slots);
+        }
+      case final BlockNode b:
+        for (final expr in b.expressions) {
+          _collectParentSlots(expr, slots);
+        }
+      case final AssignmentNode a:
+        _collectParentSlots(a.value, slots);
+      case final ConditionalNode c:
+        _collectParentSlots(c.condition, slots);
+        _collectParentSlots(c.thenExpr, slots);
+        if (c.elseExpr != null) {
+          _collectParentSlots(c.elseExpr!, slots);
+        }
+      case final FunctionCallNode f:
+        _collectParentSlots(f.function, slots);
+        for (final arg in f.arguments) {
+          _collectParentSlots(arg, slots);
+        }
+      case final IndexNode i:
+        _collectParentSlots(i.expr, slots);
+        _collectParentSlots(i.index, slots);
+      case final KeepArrayNode k:
+        _collectParentSlots(k.expr, slots);
+      default:
+        // Leaf nodes or nodes we don't need to traverse
+        break;
+    }
+  }
+
   /// Evaluates an AST node against input data.
   dynamic evaluate(AstNode node, dynamic input, Environment environment) {
     return switch (node) {
@@ -31,11 +97,7 @@ class Evaluator {
       DescendantNode() => _evaluateDescendant(input),
       final RangeNode r => _evaluateRange(r, input, environment),
       final RegexNode r => JsonataRegex(r.pattern, r.flags),
-      ParentNode() => throw JsonataException(
-          'D3011',
-          'Parent operator not yet implemented',
-          position: node.position,
-        ),
+      final ParentNode p => _evaluateParent(p, environment),
       SortNode() => throw JsonataException(
           'D3012',
           'Sort operator not yet implemented',
@@ -103,17 +165,26 @@ class Evaluator {
   }
 
   dynamic _evaluatePath(PathNode node, dynamic input, Environment env) {
+    // Check if this path or any descendant uses parent references
+    final hasParentRefs = _findParentSlots(node).isNotEmpty;
+
+    if (hasParentRefs) {
+      // Use tuple-based evaluation for paths with parent references
+      return _evaluatePathWithTuples(node, input, env);
+    }
+
+    // Standard path evaluation (no parent references)
+    return _evaluatePathStandard(node, input, env);
+  }
+
+  /// Standard path evaluation without parent reference tracking.
+  dynamic _evaluatePathStandard(PathNode node, dynamic input, Environment env) {
     final left = evaluate(node.left, input, env);
     if (isUndefined(left)) {
       return undefined;
     }
 
     // Check if this path should preserve array semantics
-    // This applies when:
-    // - Left side is a KeepArrayNode
-    // - Left side is a FilterNode whose expr is a KeepArrayNode
-    // - Left side is a PathNode that contains a KeepArrayNode
-    // - Right side is a KeepArrayNode (e.g., $.[a,b][])
     bool keepAsArray = node.left is KeepArrayNode || node.right is KeepArrayNode;
     if (!keepAsArray && node.left is FilterNode) {
       keepAsArray = (node.left as FilterNode).expr is KeepArrayNode;
@@ -123,19 +194,15 @@ class Evaluator {
     }
 
     // Helper to evaluate the right side of a path
-    // If it's a StringNode, treat it as a field name lookup
-    // If it's a FunctionCallNode, prepend the context value to arguments
     dynamic evalRight(dynamic item) {
       final right = node.right;
       if (right is StringNode) {
-        // String in path context = field name lookup
         if (item is Map) {
           return item[right.value] ?? undefined;
         }
         return undefined;
       }
       if (right is FunctionCallNode) {
-        // Context function call: prepend item to arguments
         return _evaluateFunctionCallWithContext(right, item, env);
       }
       return evaluate(right, item, env.createChild(input: item));
@@ -143,17 +210,144 @@ class Evaluator {
 
     // If left is an array, map over it
     if (left is List) {
-      // Determine if we should flatten based on the right side type
-      // Array constructors, object constructors, and keep-array expressions should NOT be flattened
       final shouldFlatten = node.right is! ArrayNode &&
                            node.right is! ObjectNode &&
                            node.right is! KeepArrayNode;
-
       return _mapOverArray(left, evalRight, flatten: shouldFlatten, keepAsArray: keepAsArray);
     }
 
-    // Evaluate right side with left as the new input
     return evalRight(left);
+  }
+
+  /// Evaluate a path with tuple tracking for parent references.
+  dynamic _evaluatePathWithTuples(PathNode node, dynamic input, Environment env) {
+    // Flatten the path into steps
+    final steps = <AstNode>[];
+    _flattenPath(node, steps);
+
+    // Start with the input as a single tuple
+    var tuples = [_Tuple(input, env)];
+
+    for (var i = 0; i < steps.length; i++) {
+      final step = steps[i];
+      final newTuples = <_Tuple>[];
+
+      for (final tuple in tuples) {
+        // If this step has ancestor bindings, bind the CURRENT context (before evaluating)
+        // to each ancestor label. This is the parent value for subsequent % operators.
+        final ancestors = _getStepAncestors(step);
+        Environment stepEnv = tuple.env;
+        if (ancestors.isNotEmpty) {
+          stepEnv = tuple.env.createChild(input: tuple.value);
+          for (final ancestor in ancestors) {
+            stepEnv.bind(ancestor.label, tuple.value);
+          }
+        }
+
+        final stepResults = _evaluateStep(step, tuple.value, stepEnv);
+
+        for (final result in stepResults) {
+          // Create new environment for this result, preserving ancestor bindings
+          final childEnv = stepEnv.createChild(input: result);
+          newTuples.add(_Tuple(result, childEnv));
+        }
+      }
+
+      tuples = newTuples;
+    }
+
+    // Extract values from tuples
+    final results = tuples.map((t) => t.value).where((v) => !isUndefined(v)).toList();
+    if (results.isEmpty) return undefined;
+    if (results.length == 1) return results[0];
+    return results;
+  }
+
+  /// Get the ancestor slots for a step if it has any.
+  List<ParentSlot> _getStepAncestors(AstNode step) {
+    if (step is NameNode) return step.ancestors;
+    if (step is WildcardNode) return step.ancestors;
+    return const [];
+  }
+
+  /// Flatten a path node into a list of steps.
+  void _flattenPath(AstNode node, List<AstNode> steps) {
+    if (node is PathNode) {
+      _flattenPath(node.left, steps);
+      _flattenPath(node.right, steps);
+    } else {
+      steps.add(node);
+    }
+  }
+
+  /// Evaluate a single step, returning a list of results.
+  List<dynamic> _evaluateStep(AstNode step, dynamic input, Environment env) {
+    if (isUndefined(input) || input == null) {
+      return [];
+    }
+
+    // Handle array input - map over it (except for array constructor which operates on single items)
+    if (input is List && step is! ArrayNode) {
+      final results = <dynamic>[];
+      for (final item in input) {
+        results.addAll(_evaluateStep(step, item, env.createChild(input: item)));
+      }
+      return results;
+    }
+
+    // For array constructor on array input, still iterate over items
+    if (input is List && step is ArrayNode) {
+      final results = <dynamic>[];
+      for (final item in input) {
+        final itemEnv = env.createChild(input: item);
+        final result = evaluate(step, item, itemEnv);
+        if (!isUndefined(result)) {
+          // Flatten array constructor results
+          if (result is List) {
+            results.addAll(result);
+          } else {
+            results.add(result);
+          }
+        }
+      }
+      return results;
+    }
+
+    // Evaluate the step
+    final result = evaluate(step, input, env.createChild(input: input));
+
+    if (isUndefined(result)) {
+      return [];
+    }
+
+    // Flatten arrays for path evaluation (except KeepArrayNode)
+    if (result is List && step is! KeepArrayNode) {
+      return result;
+    }
+
+    return [result];
+  }
+
+  /// Evaluate a parent node by looking up its slot in the environment.
+  dynamic _evaluateParent(ParentNode node, Environment env) {
+    if (node.slot == null) {
+      // This shouldn't happen if parsing was done correctly
+      throw JsonataException(
+        'D3011',
+        'Parent operator has no slot assigned',
+        position: node.position,
+      );
+    }
+    final value = env.lookup(node.slot!.label);
+    if (isUndefined(value)) {
+      // Parent not bound - this can happen at runtime
+      throw JsonataException(
+        'S0217',
+        "The object representing the 'parent' cannot be derived from this expression",
+        position: node.position,
+      );
+    }
+    return value;
   }
 
   dynamic _evaluateBinary(BinaryNode node, dynamic input, Environment env) {
@@ -425,7 +619,25 @@ class Evaluator {
     // Check if this filter should preserve array semantics
     final keepArray = node.expr is KeepArrayNode;
 
-    final expr = evaluate(node.expr, input, env);
+    // Check if the filter expression has ancestor bindings
+    // If so, bind the current input (parent context) to those labels
+    List<ParentSlot> ancestors = const [];
+    final exprNode = keepArray ? (node.expr as KeepArrayNode).expr : node.expr;
+    if (exprNode is NameNode) {
+      ancestors = exprNode.ancestors;
+    } else if (exprNode is WildcardNode) {
+      ancestors = exprNode.ancestors;
+    }
+
+    Environment filterEnv = env;
+    if (ancestors.isNotEmpty) {
+      filterEnv = env.createChild(input: input);
+      for (final ancestor in ancestors) {
+        filterEnv.bind(ancestor.label, input);
+      }
+    }
+
+    final expr = evaluate(node.expr, input, filterEnv);
     if (isUndefined(expr)) return undefined;
 
     final items = expr is List ? expr : [expr];
@@ -433,7 +645,7 @@ class Evaluator {
 
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
-      final childEnv = env.createChild(input: item);
+      final childEnv = filterEnv.createChild(input: item);
 
       final predicate = evaluate(node.predicate, item, childEnv);
 
