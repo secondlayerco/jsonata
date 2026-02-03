@@ -200,9 +200,41 @@ class Evaluator {
   }
 
   dynamic _evaluatePath(PathNode node, dynamic input, Environment env) {
-    // Check if this path or any descendant uses parent references or focus operators
-    final hasParentRefs = _findParentSlots(node).isNotEmpty;
-    final hasFocusOps = _containsFocusNode(node);
+    // FAST PATH: Simple name-only paths like a.b.c on non-array input
+    // These don't need parent refs, focus ops, or keepArray checks
+    // Only use fast path when input is a Map (not array) to avoid complex flattening
+    if (input is Map && _isSimpleNamePath(node)) {
+      final result = _evaluateSimplePath(node, input);
+      if (result != null) return result;
+      // Fall through to standard path if fast path returns null (might need special handling)
+    }
+
+    // FAST PATH: Paths with names and simple numeric index filters like a.b[0].c[0]
+    // This pattern is very common for nested data access
+    if (input is Map && _isSimpleIndexPath(node)) {
+      final result = _evaluateSimpleIndexPath(node, input);
+      if (result != null) return result;
+      // Fall through if fast path can't handle it
+    }
+
+    // OPTIMIZATION: If left side is a simple NameNode with no ancestors,
+    // we only need to check the right side for parent refs and focus ops.
+    // This avoids full tree traversal for common patterns like: name.{...}, name[...], etc.
+    final leftIsSimpleName = node.left is NameNode &&
+                             (node.left as NameNode).ancestors.isEmpty;
+
+    bool hasParentRefs;
+    bool hasFocusOps;
+
+    if (leftIsSimpleName) {
+      // Only check the right side
+      hasParentRefs = _findParentSlots(node.right).isNotEmpty;
+      hasFocusOps = _containsFocusNode(node.right);
+    } else {
+      // Check the entire tree
+      hasParentRefs = _findParentSlots(node).isNotEmpty;
+      hasFocusOps = _containsFocusNode(node);
+    }
 
     if (hasParentRefs || hasFocusOps) {
       // Use tuple-based evaluation for paths with parent references or focus operators
@@ -211,6 +243,158 @@ class Evaluator {
 
     // Standard path evaluation (no parent references)
     return _evaluatePathStandard(node, input, env);
+  }
+
+  /// Check if a path consists only of simple name lookups (no filters, functions, etc.)
+  /// and doesn't involve arrays at any level
+  bool _isSimpleNamePath(AstNode node) {
+    return switch (node) {
+      NameNode n => n.ancestors.isEmpty,
+      PathNode p => _isSimpleNamePath(p.left) && _isSimpleNamePath(p.right),
+      _ => false,
+    };
+  }
+
+  /// Fast evaluation for simple name-only paths like a.b.c
+  /// Returns null if the path can't be handled with fast path
+  /// Returns undefined if the path doesn't exist
+  dynamic _evaluateSimplePath(PathNode node, dynamic input) {
+    // Evaluate left side
+    dynamic left;
+    if (node.left is NameNode) {
+      final name = (node.left as NameNode).value;
+      if (input is Map) {
+        left = input[name];
+        if (left == null && !input.containsKey(name)) {
+          return undefined;
+        }
+      } else {
+        return null; // Can't use fast path
+      }
+    } else if (node.left is PathNode) {
+      left = _evaluateSimplePath(node.left as PathNode, input);
+      if (left == null) return null; // Can't use fast path
+      if (isUndefined(left)) return undefined;
+    } else {
+      return null; // Can't use fast path
+    }
+
+    // Evaluate right side against left result
+    final rightName = (node.right as NameNode).value;
+
+    // If left is an array, project the right field over all elements (array projection)
+    if (left is List) {
+      final results = <dynamic>[];
+      for (final item in left) {
+        if (item is Map && item.containsKey(rightName)) {
+          final value = item[rightName];
+          if (!isUndefined(value)) {
+            // Flatten nested arrays (JSONata semantics)
+            if (value is List) {
+              results.addAll(value);
+            } else {
+              results.add(value);
+            }
+          }
+        }
+      }
+      return normalizeSequence(results);
+    }
+
+    // Handle single value
+    if (left is Map) {
+      final value = left[rightName];
+      if (value == null && !left.containsKey(rightName)) {
+        return undefined;
+      }
+      return value;
+    }
+
+    return undefined;
+  }
+
+  /// Check if a path consists of simple names and simple numeric index filters like a.b[0].c[0]
+  /// This allows fast-path evaluation for very common nested data access patterns.
+  bool _isSimpleIndexPath(AstNode node) {
+    return switch (node) {
+      NameNode n => n.ancestors.isEmpty,
+      PathNode p => _isSimpleIndexPath(p.left) && _isSimpleIndexPath(p.right),
+      FilterNode f =>
+        f.expr is NameNode &&
+        (f.expr as NameNode).ancestors.isEmpty &&
+        _isSimpleLiteralIndex(f.predicate),
+      _ => false,
+    };
+  }
+
+  /// Check if a predicate is a simple literal index (positive or negative number)
+  bool _isSimpleLiteralIndex(AstNode predicate) {
+    if (predicate is NumberNode) return true;
+    if (predicate is UnaryNode) {
+      return predicate.operator == '-' && predicate.operand is NumberNode;
+    }
+    return false;
+  }
+
+  /// Fast evaluation for paths with names and simple index filters like a.b[0].c[0]
+  /// Returns null if the path can't be handled with fast path (caller should use standard path)
+  /// Returns undefined if the path doesn't exist
+  dynamic _evaluateSimpleIndexPath(AstNode node, dynamic input) {
+    if (node is NameNode) {
+      if (input is Map) {
+        if (!input.containsKey(node.value)) return undefined;
+        return input[node.value];
+      }
+      return null; // Can't use fast path on non-Map
+    }
+
+    if (node is FilterNode) {
+      // Get the field value first
+      final fieldName = (node.expr as NameNode).value;
+      if (input is! Map) return null;
+      if (!input.containsKey(fieldName)) return undefined;
+
+      final array = input[fieldName];
+      if (array is! List) {
+        // Single value with index [0] or [-1] returns the value
+        int index = _getLiteralIndex(node.predicate);
+        if (index == 0 || index == -1) return array;
+        return undefined;
+      }
+
+      final index = _getLiteralIndex(node.predicate);
+      final actualIndex = index < 0 ? array.length + index : index;
+      if (actualIndex >= 0 && actualIndex < array.length) {
+        return array[actualIndex];
+      }
+      return undefined;
+    }
+
+    if (node is PathNode) {
+      // Evaluate left side
+      final left = _evaluateSimpleIndexPath(node.left, input);
+      if (left == null) return null; // Can't use fast path
+      if (isUndefined(left)) return undefined;
+
+      // If left is a list, we can't use this fast path
+      if (left is List) return null;
+
+      // Evaluate right side on the left result
+      return _evaluateSimpleIndexPath(node.right, left);
+    }
+
+    return null; // Unknown node type
+  }
+
+  /// Get the literal integer index from a predicate (NumberNode or UnaryNode('-', NumberNode))
+  int _getLiteralIndex(AstNode predicate) {
+    if (predicate is NumberNode) {
+      return predicate.value.toInt();
+    }
+    if (predicate is UnaryNode && predicate.operator == '-') {
+      return -(predicate.operand as NumberNode).value.toInt();
+    }
+    throw StateError('Not a literal index');
   }
 
   /// Check if a node contains any FocusNode or IndexBindNode.
@@ -233,11 +417,12 @@ class Evaluator {
     }
 
     // Check if this path should preserve array semantics
+    // OPTIMIZATION: Simple NameNode can never be KeepArrayNode, skip the checks
     bool keepAsArray = node.left is KeepArrayNode || node.right is KeepArrayNode;
     if (!keepAsArray && node.left is FilterNode) {
       keepAsArray = (node.left as FilterNode).expr is KeepArrayNode;
     }
-    if (!keepAsArray) {
+    if (!keepAsArray && node.left is! NameNode) {
       keepAsArray = _containsKeepArray(node.left);
     }
 
@@ -262,6 +447,32 @@ class Evaluator {
       if (node.right is SortNode) {
         return evaluate(node.right, left, env.createChild(input: left));
       }
+
+      // FAST PATH: Simple name projection over arrays (e.g., arr.fieldName)
+      // This avoids creating child environments for each item
+      if (node.right is NameNode &&
+          (node.right as NameNode).ancestors.isEmpty) {
+        final fieldName = (node.right as NameNode).value;
+        final results = <dynamic>[];
+        for (final item in left) {
+          if (item is Map && item.containsKey(fieldName)) {
+            final value = item[fieldName];
+            if (!isUndefined(value)) {
+              if (value is List) {
+                results.addAll(value);
+              } else {
+                results.add(value);
+              }
+            }
+          }
+        }
+        if (keepAsArray) {
+          if (results.isEmpty) return undefined;
+          return results;
+        }
+        return normalizeSequence(results);
+      }
+
       final shouldFlatten = node.right is! ArrayNode &&
                            node.right is! ObjectNode &&
                            node.right is! KeepArrayNode;
@@ -1084,6 +1295,78 @@ class Evaluator {
   }
 
   dynamic _evaluateFilter(FilterNode node, dynamic input, Environment env) {
+    // FAST PATH: Simple numeric literal index without special features
+    // This avoids iterating through all items and creating child environments
+    // Handles both positive (NumberNode) and negative (UnaryNode with -) indices
+    if (node.expr is! KeepArrayNode && node.expr is! FocusNode) {
+      int? literalIndex;
+
+      if (node.predicate is NumberNode) {
+        literalIndex = (node.predicate as NumberNode).value.toInt();
+      } else if (node.predicate is UnaryNode) {
+        final unary = node.predicate as UnaryNode;
+        if (unary.operator == '-' && unary.operand is NumberNode) {
+          literalIndex = -(unary.operand as NumberNode).value.toInt();
+        }
+      }
+
+      if (literalIndex != null) {
+        final expr = evaluate(node.expr, input, env);
+        if (isUndefined(expr)) return undefined;
+
+        final items = expr is List ? expr : [expr];
+        final actualIndex =
+            literalIndex < 0 ? items.length + literalIndex : literalIndex;
+        if (actualIndex >= 0 && actualIndex < items.length) {
+          return items[actualIndex];
+        }
+        return undefined;
+      }
+
+      // FAST PATH: Simple equality predicate like [field = 'value'] or [field = 123]
+      // This avoids creating child environments for each item
+      if (node.predicate is BinaryNode) {
+        final binary = node.predicate as BinaryNode;
+        if (binary.operator == '=' &&
+            binary.left is NameNode &&
+            (binary.left as NameNode).ancestors.isEmpty) {
+          final fieldName = (binary.left as NameNode).value;
+          dynamic compareValue;
+          bool isSimpleLiteral = false;
+
+          if (binary.right is StringNode) {
+            compareValue = (binary.right as StringNode).value;
+            isSimpleLiteral = true;
+          } else if (binary.right is NumberNode) {
+            compareValue = (binary.right as NumberNode).value;
+            isSimpleLiteral = true;
+          } else if (binary.right is BooleanNode) {
+            compareValue = (binary.right as BooleanNode).value;
+            isSimpleLiteral = true;
+          } else if (binary.right is NullNode) {
+            compareValue = null;
+            isSimpleLiteral = true;
+          }
+
+          if (isSimpleLiteral) {
+            final expr = evaluate(node.expr, input, env);
+            if (isUndefined(expr)) return undefined;
+
+            final items = expr is List ? expr : [expr];
+            final results = <dynamic>[];
+
+            for (final item in items) {
+              if (item is Map && item[fieldName] == compareValue) {
+                results.add(item);
+              }
+            }
+
+            return normalizeSequence(results);
+          }
+        }
+      }
+    }
+
     // Check if this filter should preserve array semantics
     final keepArray = node.expr is KeepArrayNode;
 
