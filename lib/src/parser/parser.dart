@@ -804,6 +804,17 @@ class Parser {
       slot.level++;
       return (node, true);
     }
+    if (node is FocusNode) {
+      // Focus nodes do NOT decrement the level when seeking parent.
+      // This is because focus bindings keep the navigation context at the parent level.
+      // We still need to seek through the inner expression and propagate any modifications.
+      final (modifiedExpr, continueUp) = _seekParent(node.expr, slot);
+      if (!continueUp) {
+        return (FocusNode(node.position, modifiedExpr, node.variable), false);
+      }
+      // Continue seeking - the level is not decremented
+      return (FocusNode(node.position, modifiedExpr, node.variable), true);
+    }
     if (node is BlockNode && node.expressions.isNotEmpty) {
       // Look in the last expression
       final (modifiedExpr, continueUp) = _seekParent(node.expressions.last, slot);
@@ -827,6 +838,14 @@ class Parser {
         return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), false);
       }
       return (PathNode(node.position, modifiedLeft, modifiedRight, keepArray: node.keepArray), true);
+    }
+    if (node is FilterNode) {
+      // Seek through the filtered expression
+      final (modifiedExpr, continueUp) = _seekParent(node.expr, slot);
+      if (!continueUp) {
+        return (FilterNode(node.position, modifiedExpr, node.predicate), false);
+      }
+      return (FilterNode(node.position, modifiedExpr, node.predicate), true);
     }
     // For other types, we can't derive parent - error will be caught at top level
     return (node, true);

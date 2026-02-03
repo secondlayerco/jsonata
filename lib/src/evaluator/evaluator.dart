@@ -5,10 +5,17 @@ import '../utils/undefined.dart';
 import 'environment.dart';
 
 /// A tuple containing a value and its evaluation environment (for parent tracking).
+///
+/// - `value`: The current result value (for producing final output)
+/// - `context`: The navigation context for path evaluation (used for parent references)
+///              With focus operators, context stays at the parent level while value
+///              gets the focused item.
+/// - `env`: The environment with bindings (focus variables, parent slots, etc.)
 class _Tuple {
   final dynamic value;
+  final dynamic context;
   final Environment env;
-  _Tuple(this.value, this.env);
+  _Tuple(this.value, this.env, {dynamic? context}) : context = context ?? value;
 }
 
 /// A tuple containing an item and its evaluated sort keys.
@@ -172,16 +179,28 @@ class Evaluator {
   }
 
   dynamic _evaluatePath(PathNode node, dynamic input, Environment env) {
-    // Check if this path or any descendant uses parent references
+    // Check if this path or any descendant uses parent references or focus operators
     final hasParentRefs = _findParentSlots(node).isNotEmpty;
+    final hasFocusOps = _containsFocusNode(node);
 
-    if (hasParentRefs) {
-      // Use tuple-based evaluation for paths with parent references
+    if (hasParentRefs || hasFocusOps) {
+      // Use tuple-based evaluation for paths with parent references or focus operators
       return _evaluatePathWithTuples(node, input, env);
     }
 
     // Standard path evaluation (no parent references)
     return _evaluatePathStandard(node, input, env);
+  }
+
+  /// Check if a node contains any FocusNode.
+  bool _containsFocusNode(AstNode node) {
+    return switch (node) {
+      FocusNode() => true,
+      final PathNode p => _containsFocusNode(p.left) || _containsFocusNode(p.right),
+      final FilterNode f => _containsFocusNode(f.expr) || _containsFocusNode(f.predicate),
+      final BinaryNode b => _containsFocusNode(b.left) || _containsFocusNode(b.right),
+      _ => false,
+    };
   }
 
   /// Standard path evaluation without parent reference tracking.
@@ -237,30 +256,49 @@ class Evaluator {
     _flattenPath(node, steps);
 
     // Start with the input as a single tuple
-    var tuples = [_Tuple(input, env)];
+    // Initially, value and context are the same
+    var tuples = [_Tuple(input, env, context: input)];
 
     for (var i = 0; i < steps.length; i++) {
       final step = steps[i];
       final newTuples = <_Tuple>[];
 
       for (final tuple in tuples) {
-        // If this step has ancestor bindings, bind the CURRENT context (before evaluating)
+        // If this step has ancestor bindings, bind the CURRENT CONTEXT (before evaluating)
         // to each ancestor label. This is the parent value for subsequent % operators.
+        // Use tuple.context (navigation context) for ancestor binding, not tuple.value
         final ancestors = _getStepAncestors(step);
         Environment stepEnv = tuple.env;
         if (ancestors.isNotEmpty) {
-          stepEnv = tuple.env.createChild(input: tuple.value);
+          stepEnv = tuple.env.createChild(input: tuple.context);
           for (final ancestor in ancestors) {
-            stepEnv.bind(ancestor.label, tuple.value);
+            stepEnv.bind(ancestor.label, tuple.context);
           }
         }
 
-        final stepResults = _evaluateStep(step, tuple.value, stepEnv);
+        // Handle FocusNode specially - bind variable to each result
+        // but keep the navigation context unchanged
+        if (step is FocusNode) {
+          final focusResults = _evaluateFocusStepWithContext(step, tuple.context, stepEnv);
+          for (final (result, resultEnv, newContext) in focusResults) {
+            newTuples.add(_Tuple(result, resultEnv, context: newContext));
+          }
+        } else if (step is FilterNode) {
+          // Handle FilterNode specially to preserve focus bindings
+          final filterResults = _evaluateFilterWithTuplesAndContext(step, tuple.context, stepEnv);
+          for (final (result, resultEnv, newContext) in filterResults) {
+            newTuples.add(_Tuple(result, resultEnv, context: newContext));
+          }
+        } else {
+          // Regular step - evaluate and update both value and context
+          final stepResults = _evaluateStep(step, tuple.context, stepEnv);
 
-        for (final result in stepResults) {
-          // Create new environment for this result, preserving ancestor bindings
-          final childEnv = stepEnv.createChild(input: result);
-          newTuples.add(_Tuple(result, childEnv));
+          for (final result in stepResults) {
+            // Create new environment for this result
+            final childEnv = stepEnv.createChild(input: result);
+            // Both value and context become the result
+            newTuples.add(_Tuple(result, childEnv, context: result));
+          }
         }
       }
 
@@ -274,10 +312,123 @@ class Evaluator {
     return results;
   }
 
+  /// Evaluate a FocusNode step, returning a list of (result, environment, context) tuples.
+  /// Each result has the focus variable bound in its environment.
+  ///
+  /// IMPORTANT: The focus operator binds the variable to each result,
+  /// but the current context (@) remains the ORIGINAL input, not the result.
+  /// This allows subsequent steps to navigate from the parent context.
+  ///
+  /// Returns: (value, environment, navigation_context)
+  /// - value: The focused result (for producing final output)
+  /// - environment: Contains the focus variable binding
+  /// - navigation_context: Stays as input (for parent references)
+  List<(dynamic, Environment, dynamic)> _evaluateFocusStepWithContext(FocusNode node, dynamic input, Environment env) {
+    if (isUndefined(input) || input == null) {
+      return [];
+    }
+
+    // Evaluate the inner expression
+    final innerResults = _evaluateStep(node.expr, input, env);
+
+    // For each result, bind the focus variable to that result
+    // BUT keep the current context as the ORIGINAL input (not the result)
+    final results = <(dynamic, Environment, dynamic)>[];
+    for (final result in innerResults) {
+      // Keep input as the current context, not result
+      final childEnv = env.createChild(input: input);
+      // Bind the focus variable (e.g., $L) to the result
+      childEnv.bind(node.variable, result);
+      // value = result (the focused item)
+      // context = input (stays at parent level for navigation and parent references)
+      results.add((result, childEnv, input));
+    }
+
+    return results;
+  }
+
+  /// Evaluate a FilterNode in tuple context, preserving focus bindings.
+  /// Returns a list of (result, environment, context) tuples.
+  ///
+  /// Returns: (value, environment, navigation_context)
+  /// - value: The filtered result item (for producing final output)
+  /// - environment: Contains focus variable binding if present
+  /// - navigation_context: Stays as input when focus is present (for parent references)
+  List<(dynamic, Environment, dynamic)> _evaluateFilterWithTuplesAndContext(FilterNode node, dynamic input, Environment env) {
+    // Check if this filter should preserve array semantics
+    final keepArray = node.expr is KeepArrayNode;
+
+    // Unwrap KeepArrayNode to get actual expression
+    AstNode exprNode = keepArray ? (node.expr as KeepArrayNode).expr : node.expr;
+
+    // Check if the expression is a FocusNode - if so, we need special handling
+    String? focusVariable;
+    if (exprNode is FocusNode) {
+      focusVariable = exprNode.variable;
+      exprNode = exprNode.expr;
+    }
+
+    // Check if the filter expression has ancestor bindings
+    List<ParentSlot> ancestors = const [];
+    if (exprNode is NameNode) {
+      ancestors = exprNode.ancestors;
+    } else if (exprNode is WildcardNode) {
+      ancestors = exprNode.ancestors;
+    }
+
+    Environment filterEnv = env;
+    if (ancestors.isNotEmpty) {
+      filterEnv = env.createChild(input: input);
+      for (final ancestor in ancestors) {
+        filterEnv.bind(ancestor.label, input);
+      }
+    }
+
+    // Evaluate the expression (unwrapped from FocusNode if present)
+    final expr = evaluate(exprNode, input, filterEnv);
+    if (isUndefined(expr)) return [];
+
+    final items = expr is List ? expr : [expr];
+    final results = <(dynamic, Environment, dynamic)>[];
+
+    for (var i = 0; i < items.length; i++) {
+      final item = items[i];
+      final childEnv = filterEnv.createChild(input: item);
+
+      // If this filter has a focus variable, bind it to the current item
+      if (focusVariable != null) {
+        childEnv.bind(focusVariable, item);
+      }
+
+      final predicate = evaluate(node.predicate, item, childEnv);
+
+      if (predicate is num) {
+        // Index access
+        final index = predicate.toInt();
+        final actualIndex = index < 0 ? items.length + index : index;
+        if (actualIndex == i) {
+          // Return the item with focus binding and proper context
+          // If focus variable is present, context stays as input (not the item)
+          final newContext = focusVariable != null ? input : item;
+          results.add((item, childEnv, newContext));
+        }
+      } else if (_isTruthy(predicate)) {
+        // Return the item with focus binding and proper context
+        // If focus variable is present, context stays as input (not the item)
+        final newContext = focusVariable != null ? input : item;
+        results.add((item, childEnv, newContext));
+      }
+    }
+
+    return results;
+  }
+
   /// Get the ancestor slots for a step if it has any.
   List<ParentSlot> _getStepAncestors(AstNode step) {
     if (step is NameNode) return step.ancestors;
     if (step is WildcardNode) return step.ancestors;
+    if (step is FocusNode) return _getStepAncestors(step.expr);
+    if (step is FilterNode) return _getStepAncestors(step.expr);
     return const [];
   }
 
@@ -762,10 +913,19 @@ class Evaluator {
     // Check if this filter should preserve array semantics
     final keepArray = node.expr is KeepArrayNode;
 
+    // Unwrap KeepArrayNode to get actual expression
+    AstNode exprNode = keepArray ? (node.expr as KeepArrayNode).expr : node.expr;
+
+    // Check if the expression is a FocusNode - if so, we need special handling
+    String? focusVariable;
+    if (exprNode is FocusNode) {
+      focusVariable = exprNode.variable;
+      exprNode = exprNode.expr;
+    }
+
     // Check if the filter expression has ancestor bindings
     // If so, bind the current input (parent context) to those labels
     List<ParentSlot> ancestors = const [];
-    final exprNode = keepArray ? (node.expr as KeepArrayNode).expr : node.expr;
     if (exprNode is NameNode) {
       ancestors = exprNode.ancestors;
     } else if (exprNode is WildcardNode) {
@@ -780,7 +940,8 @@ class Evaluator {
       }
     }
 
-    final expr = evaluate(node.expr, input, filterEnv);
+    // Evaluate the expression (unwrapped from FocusNode if present)
+    final expr = evaluate(exprNode, input, filterEnv);
     if (isUndefined(expr)) return undefined;
 
     final items = expr is List ? expr : [expr];
@@ -789,6 +950,11 @@ class Evaluator {
     for (var i = 0; i < items.length; i++) {
       final item = items[i];
       final childEnv = filterEnv.createChild(input: item);
+
+      // If this filter has a focus variable, bind it to the current item
+      if (focusVariable != null) {
+        childEnv.bind(focusVariable, item);
+      }
 
       final predicate = evaluate(node.predicate, item, childEnv);
 
