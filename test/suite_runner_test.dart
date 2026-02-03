@@ -39,6 +39,8 @@ const coreGroups = [
   'function-tomillis',
   // Parent operator tests
   'parent-operator',
+  // Sort operator tests
+  'sorting',
 ];
 
 void main() {

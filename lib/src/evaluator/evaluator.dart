@@ -11,6 +11,13 @@ class _Tuple {
   _Tuple(this.value, this.env);
 }
 
+/// A tuple containing an item and its evaluated sort keys.
+class _SortTuple {
+  final dynamic item;
+  final List<dynamic> keys;
+  _SortTuple(this.item, this.keys);
+}
+
 /// Evaluates JSONata AST nodes against input data.
 class Evaluator {
   /// Find all parent slots in an AST node.
@@ -98,11 +105,7 @@ class Evaluator {
       final RangeNode r => _evaluateRange(r, input, environment),
       final RegexNode r => JsonataRegex(r.pattern, r.flags),
       final ParentNode p => _evaluateParent(p, environment),
-      SortNode() => throw JsonataException(
-          'D3012',
-          'Sort operator not yet implemented',
-          position: node.position,
-        ),
+      final SortNode s => _evaluateSort(s, input, environment),
       TransformNode() => throw JsonataException(
           'D3013',
           'Transform operator not yet implemented',
@@ -133,8 +136,12 @@ class Evaluator {
       return undefined;
     }
     if (input is Map<String, dynamic>) {
-      final value = input[node.name];
-      return value ?? undefined;
+      // Check if key exists - distinguish between missing key and null value
+      if (!input.containsKey(node.name)) {
+        return undefined;
+      }
+      // Return the value even if it's null (JSON null is a valid value)
+      return input[node.name];
     }
     if (input is List) {
       // Map over array
@@ -208,8 +215,12 @@ class Evaluator {
       return evaluate(right, item, env.createChild(input: item));
     }
 
-    // If left is an array, map over it
+    // If left is an array, map over it (except for SortNode which operates on the whole array)
     if (left is List) {
+      // SortNode operates on the whole array, not per-element
+      if (node.right is SortNode) {
+        return evaluate(node.right, left, env.createChild(input: left));
+      }
       final shouldFlatten = node.right is! ArrayNode &&
                            node.right is! ObjectNode &&
                            node.right is! KeepArrayNode;
@@ -348,6 +359,138 @@ class Evaluator {
       );
     }
     return value;
+  }
+
+  /// Evaluate a sort expression.
+  ///
+  /// The sort operator (^) sorts an array based on one or more sort terms.
+  /// Each term specifies a key expression and whether to sort ascending or descending.
+  dynamic _evaluateSort(SortNode node, dynamic input, Environment env) {
+    // First, evaluate the expression to get the array to sort
+    final result = evaluate(node.expr, input, env);
+
+    // If undefined or null, return undefined
+    if (isUndefined(result) || result == null) {
+      return undefined;
+    }
+
+    // Convert to list if not already
+    final List<dynamic> items;
+    if (result is List) {
+      items = List<dynamic>.from(result);
+    } else {
+      // Single item - still apply sort (returns the same item)
+      items = [result];
+    }
+
+    // If empty or single item, return as-is
+    if (items.isEmpty) {
+      return undefined;
+    }
+    if (items.length == 1) {
+      return items[0];
+    }
+
+    // Evaluate sort keys for each item
+    // Each item becomes a tuple of (item, [key1, key2, ...])
+    final sortTuples = <_SortTuple>[];
+    for (final item in items) {
+      final keys = <dynamic>[];
+      for (final term in node.terms) {
+        // For self-reference ($), the key is the item itself
+        final keyValue = _evaluateSortKey(term.expr, item, env);
+        keys.add(keyValue);
+      }
+      sortTuples.add(_SortTuple(item, keys));
+    }
+
+    // Sort the tuples
+    try {
+      sortTuples.sort((a, b) => _compareSortTuples(a, b, node.terms, node.position));
+    } on JsonataException {
+      rethrow;
+    }
+
+    // Extract sorted items
+    final sorted = sortTuples.map((t) => t.item).toList();
+
+    return sorted;
+  }
+
+  /// Evaluate a sort key expression for an item.
+  dynamic _evaluateSortKey(AstNode expr, dynamic item, Environment env) {
+    // Create a child environment with the item as input
+    final itemEnv = env.createChild(input: item);
+    final key = evaluate(expr, item, itemEnv);
+    return key;
+  }
+
+  /// Compare two sort tuples based on the sort terms.
+  int _compareSortTuples(
+    _SortTuple a,
+    _SortTuple b,
+    List<SortTerm> terms,
+    int position,
+  ) {
+    for (var i = 0; i < terms.length; i++) {
+      final keyA = a.keys[i];
+      final keyB = b.keys[i];
+      final descending = terms[i].descending;
+
+      final cmp = _compareSortValues(keyA, keyB, position);
+      if (cmp != 0) {
+        return descending ? -cmp : cmp;
+      }
+    }
+    return 0;
+  }
+
+  /// Compare two sort values.
+  ///
+  /// Throws T2007 for type mismatch, T2008 for non-comparable values.
+  int _compareSortValues(dynamic a, dynamic b, int position) {
+    // Handle undefined values - undefined should be LAST in sort order
+    // Note: null is NOT treated as undefined - null should throw T2008
+    final aUndef = isUndefined(a);
+    final bUndef = isUndefined(b);
+
+    if (aUndef && bUndef) return 0;
+    if (aUndef) return 1; // undefined is "greater than" defined, sorts last
+    if (bUndef) return -1; // defined is "less than" undefined
+
+    // Check types
+    final aIsNum = a is num;
+    final bIsNum = b is num;
+    final aIsStr = a is String;
+    final bIsStr = b is String;
+
+    // If both are numbers
+    if (aIsNum && bIsNum) {
+      return a.compareTo(b);
+    }
+
+    // If both are strings
+    if (aIsStr && bIsStr) {
+      return a.compareTo(b);
+    }
+
+    // Type mismatch (one is number, other is string)
+    if ((aIsNum && bIsStr) || (aIsStr && bIsNum)) {
+      throw JsonataException(
+        'T2007',
+        'Type mismatch when comparing values $a and $b in order-by clause',
+        position: position,
+        value: [a, b],
+      );
+    }
+
+    // Neither is a sortable type (bool, object, array, etc.)
+    throw JsonataException(
+      'T2008',
+      'The expressions within an order-by clause must evaluate to numeric or string values',
+      position: position,
+      value: aIsNum || aIsStr ? b : a,
+    );
   }
 
   dynamic _evaluateBinary(BinaryNode node, dynamic input, Environment env) {

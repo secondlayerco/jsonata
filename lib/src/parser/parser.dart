@@ -63,6 +63,7 @@ class Parser {
     '(': 80,
     '@': 80,
     '#': 80,
+    '^': 80,
   };
 
   /// Creates a parser for the given expression.
