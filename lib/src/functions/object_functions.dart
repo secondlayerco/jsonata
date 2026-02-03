@@ -17,7 +17,10 @@ class ObjectFunctions {
   static dynamic _keys(List<dynamic> args, dynamic input, Environment env) {
     final obj = args.isNotEmpty ? args[0] : input;
     if (isUndefined(obj) || obj is! Map) return undefined;
-    return obj.keys.toList();
+    final keys = obj.keys.toList();
+    // JSONata unwraps single-element arrays
+    if (keys.length == 1) return keys.first;
+    return keys;
   }
 
   static dynamic _values(List<dynamic> args, dynamic input, Environment env) {

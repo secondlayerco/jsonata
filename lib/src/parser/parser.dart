@@ -779,6 +779,16 @@ class Parser {
     return false;
   }
 
+  /// Check if a node ends with a FocusNode (for detecting contiguous focus steps).
+  /// This is used to implement JSONata's rule that "multiple contiguous steps
+  /// that bind the focus should be skipped" when resolving parent references.
+  bool _endsWithFocus(AstNode node) {
+    if (node is FocusNode) return true;
+    if (node is FilterNode) return _endsWithFocus(node.expr);
+    if (node is PathNode) return _endsWithFocus(node.right);
+    return false;
+  }
+
   /// Seek the parent through a node, decrementing level for name/wildcard,
   /// incrementing for parent. Returns the possibly modified node and whether resolution continues.
   /// This mirrors JavaScript's seekParent function.
@@ -827,6 +837,18 @@ class Parser {
       return (node, true);
     }
     if (node is PathNode) {
+      // Check for contiguous focus steps - if both right and left end with focus,
+      // skip the right side entirely (per JSONata spec: "multiple contiguous steps
+      // that bind the focus should be skipped")
+      if (_endsWithFocus(node.right) && _endsWithFocus(node.left)) {
+        // Skip the right side, go straight to left
+        final (modifiedLeft, continueLeft) = _seekParent(node.left, slot);
+        if (!continueLeft) {
+          return (PathNode(node.position, modifiedLeft, node.right, keepArray: node.keepArray), false);
+        }
+        return (PathNode(node.position, modifiedLeft, node.right, keepArray: node.keepArray), true);
+      }
+
       // Work backwards through path: right first, then left
       final (modifiedRight, continueRight) = _seekParent(node.right, slot);
       if (!continueRight) {
@@ -990,15 +1012,30 @@ class Parser {
 
   _ProcessResult _processSortNode(SortNode node) {
     final exprResult = _processNode(node.expr);
+
+    // Parent refs in sort terms can reference the sorted item (expr)
     final seekingParent = <ParentSlot>[...exprResult.seekingParent];
+
+    // Resolve parent slots from sort terms against the sorted expression
+    var modifiedExpr = exprResult.node;
     final terms = <SortTerm>[];
     for (final term in node.terms) {
       final keyResult = _processNode(term.expr);
       terms.add(SortTerm(keyResult.node, descending: term.descending));
-      seekingParent.addAll(keyResult.seekingParent);
+
+      // Resolve parent slots from this sort term against the sorted expression
+      for (final slot in keyResult.seekingParent) {
+        final (newExpr, continueUp) = _seekParent(modifiedExpr, slot);
+        modifiedExpr = newExpr;
+        if (continueUp) {
+          seekingParent.add(slot);
+        }
+      }
     }
-    final newNode = SortNode(node.position, exprResult.node, terms);
-    return _ProcessResult(newNode, seekingParent: seekingParent);
+
+    final newNode = SortNode(node.position, modifiedExpr, terms);
+    final tuple = exprResult.tuple || _hasAncestorBinding(modifiedExpr);
+    return _ProcessResult(newNode, seekingParent: seekingParent, tuple: tuple);
   }
 
   _ProcessResult _processFocusNode(FocusNode node) {

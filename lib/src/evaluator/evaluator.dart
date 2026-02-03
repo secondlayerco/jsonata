@@ -25,6 +25,16 @@ class _SortTuple {
   _SortTuple(this.item, this.keys);
 }
 
+/// A tuple containing an item, its sort keys, environment, and parent context.
+/// Used for sorting with parent references.
+class _SortTupleWithContext {
+  final dynamic item;
+  final List<dynamic> keys;
+  final Environment env;
+  final dynamic parentContext;
+  _SortTupleWithContext(this.item, this.keys, this.env, this.parentContext);
+}
+
 /// Evaluates JSONata AST nodes against input data.
 class Evaluator {
   /// Find all parent slots in an AST node.
@@ -38,6 +48,12 @@ class Evaluator {
     switch (node) {
       case final ParentNode p when p.slot != null:
         slots.add(p.slot!);
+      case final NameNode n:
+        // NameNode can have ancestors attached by the parser
+        slots.addAll(n.ancestors);
+      case final WildcardNode w:
+        // WildcardNode can also have ancestors attached
+        slots.addAll(w.ancestors);
       case final PathNode p:
         _collectParentSlots(p.left, slots);
         _collectParentSlots(p.right, slots);
@@ -80,6 +96,11 @@ class Evaluator {
         _collectParentSlots(i.index, slots);
       case final KeepArrayNode k:
         _collectParentSlots(k.expr, slots);
+      case final SortNode s:
+        _collectParentSlots(s.expr, slots);
+        for (final term in s.terms) {
+          _collectParentSlots(term.expr, slots);
+        }
       default:
         // Leaf nodes or nodes we don't need to traverse
         break;
@@ -192,10 +213,11 @@ class Evaluator {
     return _evaluatePathStandard(node, input, env);
   }
 
-  /// Check if a node contains any FocusNode.
+  /// Check if a node contains any FocusNode or IndexBindNode.
   bool _containsFocusNode(AstNode node) {
     return switch (node) {
       FocusNode() => true,
+      IndexBindNode() => true,
       final PathNode p => _containsFocusNode(p.left) || _containsFocusNode(p.right),
       final FilterNode f => _containsFocusNode(f.expr) || _containsFocusNode(f.predicate),
       final BinaryNode b => _containsFocusNode(b.left) || _containsFocusNode(b.right),
@@ -261,6 +283,13 @@ class Evaluator {
 
     for (var i = 0; i < steps.length; i++) {
       final step = steps[i];
+
+      // SortNode needs special handling - it operates on ALL tuples at once
+      if (step is SortNode) {
+        tuples = _evaluateSortWithTuples(step, tuples, env);
+        continue;
+      }
+
       final newTuples = <_Tuple>[];
 
       for (final tuple in tuples) {
@@ -281,6 +310,12 @@ class Evaluator {
         if (step is FocusNode) {
           final focusResults = _evaluateFocusStepWithContext(step, tuple.context, stepEnv);
           for (final (result, resultEnv, newContext) in focusResults) {
+            newTuples.add(_Tuple(result, resultEnv, context: newContext));
+          }
+        } else if (step is IndexBindNode) {
+          // Handle IndexBindNode - bind the iteration index to a variable
+          final indexResults = _evaluateIndexBindStepWithContext(step, tuple.context, stepEnv);
+          for (final (result, resultEnv, newContext) in indexResults) {
             newTuples.add(_Tuple(result, resultEnv, context: newContext));
           }
         } else if (step is FilterNode) {
@@ -347,6 +382,39 @@ class Evaluator {
     return results;
   }
 
+  /// Evaluate an IndexBindNode step, returning a list of (result, environment, context) tuples.
+  /// Each result has the index variable bound in its environment.
+  ///
+  /// The index bind operator (#$var) binds the iteration index to a variable.
+  /// Unlike focus (@$var) which binds the value, this binds the 0-based index.
+  ///
+  /// Returns: (value, environment, navigation_context)
+  /// - value: The result item (for producing final output)
+  /// - environment: Contains the index variable binding
+  /// - navigation_context: The result item (unlike focus, context moves forward)
+  List<(dynamic, Environment, dynamic)> _evaluateIndexBindStepWithContext(IndexBindNode node, dynamic input, Environment env) {
+    if (isUndefined(input) || input == null) {
+      return [];
+    }
+
+    // Evaluate the inner expression
+    final innerResults = _evaluateStep(node.expr, input, env);
+
+    // For each result, bind the index variable to the iteration index
+    final results = <(dynamic, Environment, dynamic)>[];
+    for (var i = 0; i < innerResults.length; i++) {
+      final result = innerResults[i];
+      // Create child environment with the result as input
+      final childEnv = env.createChild(input: result);
+      // Bind the index variable (e.g., $o) to the iteration index
+      childEnv.bind(node.variable, i);
+      // value = result, context = result (navigation moves forward)
+      results.add((result, childEnv, result));
+    }
+
+    return results;
+  }
+
   /// Evaluate a FilterNode in tuple context, preserving focus bindings.
   /// Returns a list of (result, environment, context) tuples.
   ///
@@ -369,11 +437,42 @@ class Evaluator {
     }
 
     // Check if the filter expression has ancestor bindings
-    List<ParentSlot> ancestors = const [];
-    if (exprNode is NameNode) {
-      ancestors = exprNode.ancestors;
-    } else if (exprNode is WildcardNode) {
-      ancestors = exprNode.ancestors;
+    // Use _getStepAncestors to handle complex expressions like BlockNode, PathNode, etc.
+    final ancestors = _getStepAncestors(exprNode);
+
+    // Special case: If the expression is a BlockNode containing a path with ancestor slots,
+    // we need to evaluate using tuples to capture each item's parent context
+    if (ancestors.isNotEmpty && exprNode is BlockNode && exprNode.expressions.isNotEmpty) {
+      final lastExpr = exprNode.expressions.last;
+      if (lastExpr is PathNode) {
+        final tuples = _evaluateBlockWithTuples(exprNode, input, env);
+        final results = <(dynamic, Environment, dynamic)>[];
+
+        for (var i = 0; i < tuples.length; i++) {
+          final (item, itemEnv) = tuples[i];
+          final childEnv = itemEnv.createChild(input: item);
+
+          if (focusVariable != null) {
+            childEnv.bind(focusVariable, item);
+          }
+
+          final predicate = evaluate(node.predicate, item, childEnv);
+
+          if (predicate is num) {
+            final index = predicate.toInt();
+            final actualIndex = index < 0 ? tuples.length + index : index;
+            if (actualIndex == i) {
+              final newContext = focusVariable != null ? input : item;
+              results.add((item, childEnv, newContext));
+            }
+          } else if (_isTruthy(predicate)) {
+            final newContext = focusVariable != null ? input : item;
+            results.add((item, childEnv, newContext));
+          }
+        }
+
+        return results;
+      }
     }
 
     Environment filterEnv = env;
@@ -428,7 +527,17 @@ class Evaluator {
     if (step is NameNode) return step.ancestors;
     if (step is WildcardNode) return step.ancestors;
     if (step is FocusNode) return _getStepAncestors(step.expr);
+    if (step is IndexBindNode) return _getStepAncestors(step.expr);
     if (step is FilterNode) return _getStepAncestors(step.expr);
+    if (step is BlockNode && step.expressions.isNotEmpty) {
+      return _getStepAncestors(step.expressions.last);
+    }
+    if (step is PathNode) {
+      // For paths, check the rightmost node first (deepest in the path)
+      final rightAncestors = _getStepAncestors(step.right);
+      if (rightAncestors.isNotEmpty) return rightAncestors;
+      return _getStepAncestors(step.left);
+    }
     return const [];
   }
 
@@ -574,6 +683,71 @@ class Evaluator {
     final itemEnv = env.createChild(input: item);
     final key = evaluate(expr, item, itemEnv);
     return key;
+  }
+
+  /// Evaluate a SortNode with tuple tracking for parent references.
+  /// This is used when the sort key expression contains % (parent references).
+  List<_Tuple> _evaluateSortWithTuples(SortNode node, List<_Tuple> tuples, Environment env) {
+    // First, evaluate the SortNode's inner expression for each tuple,
+    // keeping track of the parent context for each result.
+    // Each input tuple can produce multiple results (if the expr evaluates to an array).
+    final itemsWithContext = <(dynamic item, Environment itemEnv, dynamic parentContext)>[];
+
+    for (final tuple in tuples) {
+      // Get ancestors from the sort expression (e.g., SKU with ancestors)
+      final ancestors = _getStepAncestors(node.expr);
+      Environment stepEnv = tuple.env;
+      if (ancestors.isNotEmpty) {
+        stepEnv = tuple.env.createChild(input: tuple.context);
+        for (final ancestor in ancestors) {
+          stepEnv.bind(ancestor.label, tuple.context);
+        }
+      }
+
+      // Evaluate the inner expression (e.g., SKU)
+      final results = _evaluateStep(node.expr, tuple.context, stepEnv);
+
+      for (final result in results) {
+        // Each result's parent context is the tuple's context (e.g., Product)
+        itemsWithContext.add((result, stepEnv, tuple.context));
+      }
+    }
+
+    if (itemsWithContext.isEmpty) {
+      return [];
+    }
+
+    // Now sort the items using the sort terms
+    // The key expression needs access to the parent context via % operator
+    final sortTuples = <_SortTupleWithContext>[];
+    for (final (item, itemEnv, parentContext) in itemsWithContext) {
+      final keys = <dynamic>[];
+      for (final term in node.terms) {
+        // Evaluate the sort key with the item as input
+        // The environment (itemEnv) has parent context bindings for % operator
+        final key = evaluate(term.expr, item, itemEnv);
+        keys.add(key);
+      }
+      sortTuples.add(_SortTupleWithContext(item, keys, itemEnv, parentContext));
+    }
+
+    // Sort the tuples
+    try {
+      sortTuples.sort((a, b) => _compareSortTuples(
+        _SortTuple(a.item, a.keys),
+        _SortTuple(b.item, b.keys),
+        node.terms,
+        node.position,
+      ));
+    } on JsonataException {
+      rethrow;
+    }
+
+    // Return sorted tuples
+    return sortTuples.map((t) {
+      final childEnv = t.env.createChild(input: t.item);
+      return _Tuple(t.item, childEnv, context: t.item);
+    }).toList();
   }
 
   /// Compare two sort tuples based on the sort terms.
@@ -924,12 +1098,44 @@ class Evaluator {
     }
 
     // Check if the filter expression has ancestor bindings
-    // If so, bind the current input (parent context) to those labels
-    List<ParentSlot> ancestors = const [];
-    if (exprNode is NameNode) {
-      ancestors = exprNode.ancestors;
-    } else if (exprNode is WildcardNode) {
-      ancestors = exprNode.ancestors;
+    // Use _getStepAncestors to handle complex expressions like BlockNode, PathNode, etc.
+    final ancestors = _getStepAncestors(exprNode);
+
+    // Special case: If the expression is a BlockNode containing a path with ancestor slots,
+    // we need to evaluate using tuples to capture each item's parent context
+    if (ancestors.isNotEmpty && exprNode is BlockNode && exprNode.expressions.isNotEmpty) {
+      final lastExpr = exprNode.expressions.last;
+      if (lastExpr is PathNode) {
+        final tuples = _evaluateBlockWithTuples(exprNode, input, env);
+        final results = <dynamic>[];
+
+        for (var i = 0; i < tuples.length; i++) {
+          final (item, itemEnv) = tuples[i];
+          final childEnv = itemEnv.createChild(input: item);
+
+          if (focusVariable != null) {
+            childEnv.bind(focusVariable, item);
+          }
+
+          final predicate = evaluate(node.predicate, item, childEnv);
+
+          if (predicate is num) {
+            final index = predicate.toInt();
+            final actualIndex = index < 0 ? tuples.length + index : index;
+            if (actualIndex == i) {
+              results.add(item);
+            }
+          } else if (_isTruthy(predicate)) {
+            results.add(item);
+          }
+        }
+
+        if (keepArray) {
+          if (results.isEmpty) return undefined;
+          return results;
+        }
+        return normalizeSequence(results);
+      }
     }
 
     Environment filterEnv = env;
@@ -1329,6 +1535,71 @@ class Evaluator {
       result = evaluate(expr, input, blockEnv);
     }
     return result;
+  }
+
+  /// Evaluate a BlockNode and return tuples of (value, environment) for each result.
+  /// This is used when the block contains a path with ancestor slots that need
+  /// to be preserved for filter predicates.
+  List<(dynamic, Environment)> _evaluateBlockWithTuples(BlockNode node, dynamic input, Environment env) {
+    final blockEnv = env.createChild(input: input);
+
+    // For all expressions except the last, just evaluate normally
+    for (var i = 0; i < node.expressions.length - 1; i++) {
+      evaluate(node.expressions[i], input, blockEnv);
+    }
+
+    // For the last expression (which should be a PathNode), use tuple evaluation
+    final lastExpr = node.expressions.last;
+    if (lastExpr is PathNode) {
+      // Check for parent slots in this path
+      final parentSlots = _findParentSlots(lastExpr);
+      if (parentSlots.isNotEmpty) {
+        // Flatten the path into steps
+        final steps = <AstNode>[];
+        _flattenPath(lastExpr, steps);
+
+        // Start with the input as a single tuple
+        var tuples = [_Tuple(input, blockEnv, context: input)];
+
+        for (var i = 0; i < steps.length; i++) {
+          final step = steps[i];
+          final newTuples = <_Tuple>[];
+
+          for (final tuple in tuples) {
+            // Bind ancestors to the current context
+            final ancestors = _getStepAncestors(step);
+            Environment stepEnv = tuple.env;
+            if (ancestors.isNotEmpty) {
+              stepEnv = tuple.env.createChild(input: tuple.context);
+              for (final ancestor in ancestors) {
+                stepEnv.bind(ancestor.label, tuple.context);
+              }
+            }
+
+            // Evaluate the step
+            final stepResults = _evaluateStep(step, tuple.context, stepEnv);
+
+            for (final result in stepResults) {
+              final childEnv = stepEnv.createChild(input: result);
+              newTuples.add(_Tuple(result, childEnv, context: result));
+            }
+          }
+
+          tuples = newTuples;
+        }
+
+        // Return (value, env) tuples - the env contains ancestor bindings
+        return tuples.where((t) => !isUndefined(t.value)).map((t) => (t.value, t.env)).toList();
+      }
+    }
+
+    // Fallback: evaluate normally and wrap each result
+    final result = evaluate(lastExpr, input, blockEnv);
+    if (isUndefined(result)) return [];
+    if (result is List) {
+      return result.map((item) => (item, blockEnv)).toList();
+    }
+    return [(result, blockEnv)];
   }
 
   dynamic _evaluateWildcard(dynamic input) {
